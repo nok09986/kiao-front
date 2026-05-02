@@ -26,6 +26,22 @@ try {
   console.error("Firebase init error", e);
 }
 
+// ฟังก์ชันหาวันที่ปัจจุบันสำหรับ Input Type Date (YYYY-MM-DD)
+const getTodayIso = () => {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+// ฟังก์ชันแปลง YYYY-MM-DD เป็นวันที่ไทย (DD/MM/YYYY)
+const formatThaiDate = (isoStr) => {
+  if(!isoStr) return '';
+  const [y, m, d] = isoStr.split('-');
+  return `${parseInt(d,10)}/${parseInt(m,10)}/${parseInt(y,10) + 543}`;
+};
+
 export default function App() {
   const [currentView, setCurrentView] = useState('menu'); 
   const [activeBranch, setActiveBranch] = useState('');
@@ -37,13 +53,18 @@ export default function App() {
   const ADMIN_PIN = '5930'; 
 
   const [summaryDate, setSummaryDate] = useState('all');
-  const [confirmDialog, setConfirmDialog] = useState({ show: false, message: '', onConfirm: null });
+  
+  // อัปเกรด Dialog ให้รองรับรหัสผ่าน
+  const [confirmDialog, setConfirmDialog] = useState({ show: false, message: '', onConfirm: null, requirePin: false });
+  const [confirmPin, setConfirmPin] = useState('');
+
   const [isOnline, setIsOnline] = useState(false);
 
   const [editingRecord, setEditingRecord] = useState(null);
   const [summaryPopupInfo, setSummaryPopupInfo] = useState(null); 
 
   const [formData, setFormData] = useState({
+    recordDate: getTodayIso(), // เพิ่มฟิลด์วันที่
     shift: 'เช้า', cashierName: '', floatIn: '', actualCash: '', transferAmount: '',
     expenseType: 'ค่าของในร้าน', expenseAmount: '', nextFloat: '', overAmount: '', shortAmount: '', notes: '',
   });
@@ -87,11 +108,13 @@ export default function App() {
       return;
     }
     const docId = `TRX-${Date.now()}`;
+    const savedDate = formatThaiDate(formData.recordDate); // แปลงวันที่ที่เลือกเป็น พ.ศ.
+
     const newRecord = {
       ...formData,
       branch: activeBranch, 
       timestamp: Date.now(),
-      date: new Date().toLocaleDateString('th-TH'),
+      date: savedDate, // ใช้วันที่ที่เลือก
       time: new Date().toTimeString().slice(0, 8),
       floatIn: Number(formData.floatIn) || 0,
       actualCash: Number(formData.actualCash) || 0,
@@ -104,7 +127,14 @@ export default function App() {
     try {
       await setDoc(doc(db, 'artifacts', 'kiao-shop-pos', 'public', 'data', 'kiao_shift_records', docId), newRecord);
       showToast(`บันทึกเรียบร้อย`, 'success');
-      setFormData({ shift: 'เช้า', cashierName: '', floatIn: '', actualCash: '', transferAmount: '', expenseType: 'ค่าของในร้าน', expenseAmount: '', nextFloat: '', overAmount: '', shortAmount: '', notes: '' });
+      
+      // รีเซ็ตฟอร์มกลับค่าเดิม
+      setFormData({ 
+        recordDate: getTodayIso(), 
+        shift: 'เช้า', cashierName: '', floatIn: '', actualCash: '', transferAmount: '', 
+        expenseType: 'ค่าของในร้าน', expenseAmount: '', nextFloat: '', overAmount: '', shortAmount: '', notes: '' 
+      });
+      
       setIsHistoryUnlocked(true);
       setBranchTab('history');
     } catch (err) { showToast('บันทึกไม่สำเร็จ', 'error'); }
@@ -135,29 +165,38 @@ export default function App() {
   const handleDeleteRecord = (id) => {
     setConfirmDialog({
       show: true,
+      requirePin: true,
       message: 'ลบประวัตินี้ถาวร?',
-      onConfirm: async () => {
+      onConfirm: async (enteredPin) => {
+        if (enteredPin !== ADMIN_PIN) return showToast("❌ รหัสผ่านไม่ถูกต้อง!", "error");
         try {
           await deleteDoc(doc(db, 'artifacts', 'kiao-shop-pos', 'public', 'data', 'kiao_shift_records', id));
           showToast('ลบรายการสำเร็จ', 'success');
-          setConfirmDialog({ show: false, message: '', onConfirm: null });
         } catch (err) { showToast('ลบไม่สำเร็จ', 'error'); }
       }
     });
   };
 
-  const handleClearAllHistory = () => {
+  const handleDeleteSpecificHistory = () => {
+    if (summaryDate === 'all') {
+       showToast("⚠️ กรุณาเลือกวันที่ต้องการลบก่อนครับ", "error");
+       return;
+    }
+
     setConfirmDialog({
       show: true,
-      message: 'ล้างประวัติทั้งหมด? (ไม่สามารถกู้คืนได้)',
-      onConfirm: async () => {
+      requirePin: true,
+      message: `ลบประวัติของ "วันที่ ${summaryDate}" ใช่หรือไม่?\n(ข้อมูลปิดกะของทุกสาขาในวันนี้จะหายไปทั้งหมด)`,
+      onConfirm: async (enteredPin) => {
+        if (enteredPin !== ADMIN_PIN) return showToast("❌ รหัสผ่านไม่ถูกต้อง!", "error");
         try {
-          for (const record of historyData) {
+          const recordsToDelete = historyData.filter(d => d.date === summaryDate);
+          for (const record of recordsToDelete) {
             await deleteDoc(doc(db, 'artifacts', 'kiao-shop-pos', 'public', 'data', 'kiao_shift_records', record.id));
           }
-          showToast('ล้างประวัติสำเร็จ', 'success');
-          setConfirmDialog({ show: false, message: '', onConfirm: null });
-        } catch (err) { showToast('ล้างไม่สำเร็จ', 'error'); }
+          setSummaryDate('all');
+          showToast(`ลบข้อมูลวันที่ ${summaryDate} สำเร็จ`, 'success');
+        } catch (err) { showToast('เกิดข้อผิดพลาดในการลบ', 'error'); }
       }
     });
   };
@@ -308,16 +347,26 @@ export default function App() {
           </div>
         )}
 
-        {/* --- Dialog ยืนยันการลบ --- */}
+        {/* --- Dialog ยืนยัน (รองรับรหัสผ่าน) --- */}
         {confirmDialog.show && (
-          <div className="absolute inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-[#24293f] border border-[#3b4363] rounded-2xl p-6 w-full max-w-sm shadow-2xl text-center">
+          <div className="absolute inset-0 z-[200] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-[#24293f] border border-[#3b4363] rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center">
               <AlertTriangle size={48} className="text-red-400 mx-auto mb-4" />
-              <h3 className="text-white font-bold text-lg mb-2">ยืนยันการลบ?</h3>
-              <p className="text-slate-400 text-sm mb-6 leading-relaxed">{confirmDialog.message}</p>
+              <h3 className="text-white font-bold text-lg mb-2">ยืนยันการดำเนินการ</h3>
+              <p className="text-slate-400 text-sm mb-6 leading-relaxed whitespace-pre-line">{confirmDialog.message}</p>
+              
+              {confirmDialog.requirePin && (
+                <input 
+                  type="password" inputMode="numeric" placeholder="รหัสผ่าน (PIN)" 
+                  value={confirmPin} onChange={(e) => setConfirmPin(e.target.value)}
+                  className="w-full bg-[#1c2135] border border-[#3b4363] text-white text-center text-xl tracking-[0.3em] p-3 rounded-xl focus:outline-none focus:border-blue-500 mb-6 font-mono"
+                  maxLength={4} autoFocus
+                />
+              )}
+
               <div className="flex space-x-3">
-                <button onClick={() => setConfirmDialog({ show: false, message: '', onConfirm: null })} className="flex-1 py-3 rounded-xl bg-[#1c2135] text-white border border-[#3b4363]">ยกเลิก</button>
-                <button onClick={confirmDialog.onConfirm} className="flex-1 py-3 rounded-xl bg-red-500 text-white font-bold">ยืนยัน</button>
+                <button onClick={() => { setConfirmDialog({ show: false, message: '', onConfirm: null, requirePin: false }); setConfirmPin(''); }} className="flex-1 py-3 rounded-xl bg-[#1c2135] text-white border border-[#3b4363]">ยกเลิก</button>
+                <button onClick={() => { confirmDialog.onConfirm(confirmPin); setConfirmDialog({ show: false, message: '', onConfirm: null, requirePin: false }); setConfirmPin(''); }} className="flex-1 py-3 rounded-xl bg-red-500 text-white font-bold">ยืนยัน</button>
               </div>
             </div>
           </div>
@@ -371,6 +420,18 @@ export default function App() {
             <div className="p-4 overflow-y-auto">
               {branchTab === 'form' ? (
                 <div className="bg-[#24293f] p-5 rounded-[20px] border border-[#374160] shadow-xl">
+                  
+                  {/* ฟิลด์เลือกวันที่ (สำหรับพนักงานที่ปิดกะข้ามวัน) */}
+                  <div className="mb-5 bg-[#1c2135] p-3 rounded-xl border border-blue-500/30">
+                    <label className={labelStyle}>📅 วันที่ประจำกะ (เปลี่ยนได้ถ้าปิดกะข้ามวัน)</label>
+                    <input 
+                      type="date" 
+                      value={formData.recordDate} 
+                      onChange={(e) => setFormData({...formData, recordDate: e.target.value})} 
+                      className={`${inputStyle} text-blue-300 font-bold tracking-widest`} 
+                    />
+                  </div>
+
                   <div className="grid grid-cols-2 gap-4 mb-4">
                     <div className="col-span-2"><label className={labelStyle}>ชื่อพนักงาน</label><input type="text" value={formData.cashierName} onChange={(e) => setFormData({...formData, cashierName: e.target.value})} className={inputStyle} placeholder="ระบุชื่อ..." /></div>
                     <div><label className={labelStyle}>กะ</label><select value={formData.shift} onChange={(e) => setFormData({...formData, shift: e.target.value})} className={inputStyle}><option>เช้า</option><option>บ่าย</option><option>ดึก</option></select></div>
@@ -480,7 +541,11 @@ export default function App() {
                           {availableDates.map(d => (<option key={d} value={d}>วันที่ {d}</option>))}
                         </select>
                       </div>
-                      <button onClick={handleClearAllHistory} className="p-3 bg-red-500/10 text-red-500 rounded-xl border border-red-500/20 active:scale-95 transition shadow-lg"><Trash2 size={18}/></button>
+                      
+                      {/* เปลี่ยนเป็นปุ่มลบเฉพาะวันที่เลือก ถ้าเลือก all จะกดแล้วแจ้งเตือน */}
+                      <button onClick={handleDeleteSpecificHistory} className="p-3 bg-red-500/10 text-red-500 rounded-xl border border-red-500/20 active:scale-95 transition shadow-lg">
+                        <Trash2 size={18}/>
+                      </button>
                    </div>
 
                    {summary.groupedData.map((branchData, idx) => (
