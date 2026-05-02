@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Crown, Store, Lock, Unlock, CheckCircle, ShieldAlert, FileText, Search, BarChart2, ChevronLeft, Wallet, User, Calendar, Clock, MapPin, Trash2, Filter, AlertTriangle, Edit2, X } from 'lucide-react';
+import { Crown, Store, Lock, Unlock, CheckCircle, ShieldAlert, FileText, Search, BarChart2, ChevronLeft, Wallet, User, Calendar, Clock, MapPin, Trash2, Filter, AlertTriangle, Edit2, X, Info } from 'lucide-react';
 
 // --- 1. นำเข้า Firebase ---
 import { initializeApp } from 'firebase/app';
@@ -40,8 +40,8 @@ export default function App() {
   const [confirmDialog, setConfirmDialog] = useState({ show: false, message: '', onConfirm: null });
   const [isOnline, setIsOnline] = useState(false);
 
-  // State สำหรับการแก้ไขข้อมูล
   const [editingRecord, setEditingRecord] = useState(null);
+  const [summaryPopupInfo, setSummaryPopupInfo] = useState(null); // State สำหรับป๊อปอัพหน้าสรุป
 
   const [formData, setFormData] = useState({
     shift: 'เช้า', cashierName: '', floatIn: '', actualCash: '', transferAmount: '',
@@ -164,9 +164,7 @@ export default function App() {
 
   const formatNum = (num) => Number(num).toLocaleString('th-TH');
 
-  // ฟังก์ชันดึงยอดสรุปแยกสาขา
   const getSummaryData = () => {
-    // โชว์แค่ 3 สาขาที่ใช้งาน
     const branches = ['สาขา 2', 'สาขา 3', 'สาขา 5'];
     const shifts = ['เช้า', 'บ่าย', 'ดึก'];
     let grandTotalCash = 0;
@@ -181,14 +179,14 @@ export default function App() {
 
       const shiftData = shifts.map(shiftName => {
         const shiftRecords = branchRecords.filter(d => d.shift === shiftName);
-        if (shiftRecords.length === 0) return { shift: shiftName, cash: null, transfer: null };
+        if (shiftRecords.length === 0) return { shift: shiftName, cash: null, transfer: null, records: [] };
 
-        const cash = shiftRecords.reduce((sum, r) => sum + (r.actualCash - r.nextFloat), 0);
-        const transfer = shiftRecords.reduce((sum, r) => sum + r.transferAmount, 0);
+        const cash = shiftRecords.reduce((sum, r) => sum + ((Number(r.actualCash)||0) - (Number(r.nextFloat)||0)), 0);
+        const transfer = shiftRecords.reduce((sum, r) => sum + (Number(r.transferAmount)||0), 0);
 
         branchTotalCash += cash;
         branchTotalTransfer += transfer;
-        return { shift: shiftName, cash, transfer };
+        return { shift: shiftName, cash, transfer, records: shiftRecords };
       });
 
       grandTotalCash += branchTotalCash;
@@ -228,7 +226,7 @@ export default function App() {
     <div className="min-h-screen bg-[#111526] font-sans flex justify-center">
       <div className="w-full max-w-md bg-[#161a2b] min-h-screen relative shadow-2xl overflow-x-hidden pb-10">
         
-        {/* --- Modal แก้ไขข้อมูล --- */}
+        {/* --- Modal แก้ไขข้อมูลหน้าประวัติ --- */}
         {editingRecord && (
           <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
             <div className="bg-[#24293f] border border-[#3b4363] rounded-[2rem] p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95">
@@ -239,24 +237,73 @@ export default function App() {
               <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
                 <div><label className={labelStyle}>ชื่อพนักงาน</label><input type="text" className={inputStyle} value={editingRecord.cashierName} onChange={e => setEditingRecord({...editingRecord, cashierName: e.target.value})} /></div>
                 <div className="grid grid-cols-2 gap-2">
-                  <div><label className={labelStyle}>เงินทอนเริ่ม</label><input type="number" className={inputStyle} value={editingRecord.floatIn} onChange={e => setEditingRecord({...editingRecord, floatIn: e.target.value})} /></div>
-                  <div><label className={labelStyle}>เงินสดนับได้</label><input type="number" className={inputStyle} value={editingRecord.actualCash} onChange={e => setEditingRecord({...editingRecord, actualCash: e.target.value})} /></div>
+                  <div><label className={labelStyle}>ทอนเริ่มกะ</label><input type="number" className={inputStyle} value={editingRecord.floatIn} onChange={e => setEditingRecord({...editingRecord, floatIn: e.target.value})} /></div>
+                  <div><label className={labelStyle}>เงินสดในเก๊ะ</label><input type="number" className={inputStyle} value={editingRecord.actualCash} onChange={e => setEditingRecord({...editingRecord, actualCash: e.target.value})} /></div>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                  <div><label className={labelStyle}>หักทอนกะใหม่</label><input type="number" className={inputStyle} value={editingRecord.nextFloat} onChange={e => setEditingRecord({...editingRecord, nextFloat: e.target.value})} /></div>
-                  <div><label className={labelStyle}>ยอดเงินโอน</label><input type="number" className={inputStyle} value={editingRecord.transferAmount} onChange={e => setEditingRecord({...editingRecord, transferAmount: e.target.value})} /></div>
+                  <div><label className={labelStyle}>หักทอนใหม่</label><input type="number" className={inputStyle} value={editingRecord.nextFloat} onChange={e => setEditingRecord({...editingRecord, nextFloat: e.target.value})} /></div>
+                  <div><label className={labelStyle}>ยอดโอน/QR</label><input type="number" className={inputStyle} value={editingRecord.transferAmount} onChange={e => setEditingRecord({...editingRecord, transferAmount: e.target.value})} /></div>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div><label className={labelStyle}>รายจ่าย</label><input type="number" className={inputStyle} value={editingRecord.expenseAmount} onChange={e => setEditingRecord({...editingRecord, expenseAmount: e.target.value})} /></div>
-                  <div><label className={labelStyle}>ประเภทรายจ่าย</label><input type="text" className={inputStyle} value={editingRecord.expenseType} onChange={e => setEditingRecord({...editingRecord, expenseType: e.target.value})} /></div>
+                  <div><label className={labelStyle}>ค่าอะไร</label><input type="text" className={inputStyle} value={editingRecord.expenseType} onChange={e => setEditingRecord({...editingRecord, expenseType: e.target.value})} /></div>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div><label className={labelStyle}>เงินเกิน</label><input type="number" className={inputStyle} value={editingRecord.overAmount} onChange={e => setEditingRecord({...editingRecord, overAmount: e.target.value})} /></div>
-                  <div><label className={labelStyle}>เงินหาย</label><input type="number" className={inputStyle} value={editingRecord.shortAmount} onChange={e => setEditingRecord({...editingRecord, shortAmount: e.target.value})} /></div>
+                  <div><label className={labelStyle}>เงินขาด</label><input type="number" className={inputStyle} value={editingRecord.shortAmount} onChange={e => setEditingRecord({...editingRecord, shortAmount: e.target.value})} /></div>
                 </div>
                 <div><label className={labelStyle}>หมายเหตุ</label><textarea className={inputStyle} value={editingRecord.notes} onChange={e => setEditingRecord({...editingRecord, notes: e.target.value})} /></div>
               </div>
               <button onClick={handleUpdateRecord} className="w-full mt-6 py-4 bg-emerald-600 text-white font-bold rounded-xl active:scale-95 transition shadow-lg">บันทึกการแก้ไข</button>
+            </div>
+          </div>
+        )}
+
+        {/* --- Modal ป๊อปอัพหน้าสรุปยอดรวม (ดึงข้อมูลทอนเริ่ม/ทอนใหม่ มาโชว์) --- */}
+        {summaryPopupInfo && (
+          <div className="fixed inset-0 z-[150] bg-black/80 backdrop-blur-md flex items-center justify-center p-4" onClick={() => setSummaryPopupInfo(null)}>
+            <div className="bg-[#24293f] border border-[#3b4363] rounded-[2rem] p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-white font-black text-lg flex items-center gap-2"><BarChart2 className="text-blue-400" /> {summaryPopupInfo.title}</h3>
+                <button onClick={() => setSummaryPopupInfo(null)} className="p-2 text-slate-400 bg-[#1c2135] rounded-full"><X size={18}/></button>
+              </div>
+              <div className="max-h-[60vh] overflow-y-auto pr-1">
+                {summaryPopupInfo.records.map((r, i) => (
+                  <div key={i} className="bg-[#1c2135] p-4 rounded-2xl border border-[#3b4363] mb-3 last:mb-0">
+                    <div className="flex justify-between items-center border-b border-[#3b4363] pb-2 mb-3">
+                      <div className="font-bold text-blue-400">พนักงาน: <span className="text-white">{r.cashierName}</span></div>
+                      <div className="text-xs text-slate-500">{r.time}</div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-3 text-xs mb-3">
+                      <div className="bg-[#24293f] p-2 rounded-lg border border-[#374160]">
+                        <span className="text-slate-400 block mb-1">เงินทอนเริ่มกะ</span>
+                        <span className="text-white font-bold text-sm">{formatNum(r.floatIn)} ฿</span>
+                      </div>
+                      <div className="bg-[#24293f] p-2 rounded-lg border border-[#374160]">
+                        <span className="text-slate-400 block mb-1">หักทอนกะใหม่</span>
+                        <span className="text-blue-400 font-bold text-sm">{formatNum(r.nextFloat)} ฿</span>
+                      </div>
+                    </div>
+
+                    <div className="bg-emerald-500/10 p-2.5 rounded-lg border border-emerald-500/20 mb-3 flex justify-between items-center">
+                      <span className="text-emerald-300 font-bold">ส่งเงินสดจริง</span>
+                      <span className="text-emerald-400 font-black text-lg">{formatNum((Number(r.actualCash)||0) - (Number(r.nextFloat)||0))} ฿</span>
+                    </div>
+
+                    <div className="space-y-1 text-xs text-slate-300">
+                      <div className="flex justify-between"><span className="text-slate-500">ยอดเงินโอน/QR:</span> <span>{formatNum(r.transferAmount)} ฿</span></div>
+                      {(Number(r.expenseAmount) > 0) && (
+                         <div className="flex justify-between text-rose-400"><span className="text-rose-500">รายจ่าย ({r.expenseType}):</span> <span>-{formatNum(r.expenseAmount)} ฿</span></div>
+                      )}
+                      {(Number(r.overAmount) > 0) && <div className="flex justify-between text-amber-400"><span>เงินเกิน:</span> <span>+{formatNum(r.overAmount)} ฿</span></div>}
+                      {(Number(r.shortAmount) > 0) && <div className="flex justify-between text-rose-400"><span>เงินขาด:</span> <span>-{formatNum(r.shortAmount)} ฿</span></div>}
+                    </div>
+                    {r.notes && <div className="mt-3 p-2 bg-[#2d334d] rounded-lg text-[10px] text-slate-400 border border-[#3b4363]">หมายเหตุ: {r.notes}</div>}
+                  </div>
+                ))}
+              </div>
+              <button onClick={() => setSummaryPopupInfo(null)} className="w-full mt-4 py-3.5 bg-blue-600 text-white font-bold rounded-xl active:scale-95 transition">ปิดหน้าต่าง</button>
             </div>
           </div>
         )}
@@ -298,7 +345,7 @@ export default function App() {
               <div className="pt-4 mt-4 border-t border-[#2d334d]"></div>
               <button onClick={() => setCurrentView('summary')} className="w-full rounded-[16px] bg-[#2b3040] border border-[#3b4363] p-4 flex items-center justify-center active:scale-95 shadow-lg">
                  <Lock size={20} className="text-[#fcd34d] mr-3" />
-                 <span className="text-white font-bold">สรุปยอดรวม (Manager)</span>
+                 <span className="text-white font-bold">สรุปยอดรวมทุกสาขา</span>
               </button>
             </div>
             <div className="mt-8 flex justify-center items-center gap-2 text-[10px] font-bold tracking-widest text-slate-500 uppercase">
@@ -374,13 +421,26 @@ export default function App() {
                                 <button onClick={() => handleDeleteRecord(data.id)} className="p-2 bg-red-500/10 text-red-400 rounded-lg hover:bg-red-500/20 active:scale-90 transition"><Trash2 size={16} /></button>
                               </div>
                             </div>
-                            <div className="bg-[#2d334d] p-4 rounded-xl border border-[#3b4363] mb-4">
+                            <div className="bg-[#2d334d] p-4 rounded-xl border border-[#3b4363] mb-3">
                               <div className="text-[#94a3b8] text-[10px] font-bold mb-1 uppercase tracking-widest">ยอดนำส่งสุทธิรวม</div>
                               <div className="text-2xl font-extrabold text-[#fcd34d]">{formatNum(((Number(data.actualCash) || 0) - (Number(data.nextFloat) || 0)) + (Number(data.transferAmount) || 0))} ฿</div>
                             </div>
+                            
+                            {/* เพิ่มเงินทอนหน้าประวัติครับ */}
+                            <div className="grid grid-cols-2 gap-2 text-xs mb-3">
+                              <div className="bg-[#1c2135] p-2.5 rounded-xl border border-[#3b4363]">
+                                <span className="text-slate-400 block mb-1">เงินทอนเริ่มกะ</span>
+                                <span className="text-white font-bold">{formatNum(data.floatIn)} ฿</span>
+                              </div>
+                              <div className="bg-[#1c2135] p-2.5 rounded-xl border border-[#3b4363]">
+                                <span className="text-slate-400 block mb-1">ทอนกะใหม่</span>
+                                <span className="text-blue-400 font-bold">{formatNum(data.nextFloat)} ฿</span>
+                              </div>
+                            </div>
+
                             <div className="bg-[#1c2135] p-3 rounded-xl border border-[#3b4363] text-xs grid grid-cols-2 gap-2 text-slate-300">
                               <div><span className="text-slate-500">พนักงาน:</span> {data.cashierName}</div><div><span className="text-slate-500">กะ:</span> {data.shift}</div>
-                              <div className="col-span-2"><span className="text-slate-500">หมายเหตุ:</span> {data.notes || '-'}</div>
+                              <div className="col-span-2 truncate"><span className="text-slate-500">หมายเหตุ:</span> {data.notes || '-'}</div>
                             </div>
                          </div>
                       ))}
@@ -395,7 +455,7 @@ export default function App() {
           </div>
         )}
 
-        {/* ================= สรุปยอดรวม (ตารางแยกสาขา) ================= */}
+        {/* ================= สรุปยอดรวม (ตารางแยกสาขา + ป๊อปอัพ) ================= */}
         {currentView === 'summary' && (
           <div className="flex flex-col h-full">
             <div className="bg-[#1e2336] p-4 flex items-center border-b border-[#2d334d] sticky top-0 z-10 shadow-lg">
@@ -413,7 +473,6 @@ export default function App() {
                 </div>
               ) : (
                 <div className="pb-10">
-                   {/* ตัวกรองวันที่ */}
                    <div className="flex justify-between items-center mb-6">
                       <div className="flex items-center bg-[#24293f] p-2 rounded-xl border border-[#3b4363] shadow-lg flex-1 mr-3">
                         <Filter size={18} className="text-blue-400 mx-2" />
@@ -425,25 +484,36 @@ export default function App() {
                       <button onClick={handleClearAllHistory} className="p-3 bg-red-500/10 text-red-500 rounded-xl border border-red-500/20 active:scale-95 transition shadow-lg"><Trash2 size={18}/></button>
                    </div>
 
-                   {/* แยกตารางรายสาขา */}
                    {summary.groupedData.map((branchData, idx) => (
                      <div key={idx} className="bg-[#24293f] p-4 rounded-[20px] border border-[#3b4363] shadow-xl mb-6">
-                        <h4 className="text-[#60a5fa] font-black text-base mb-3 flex items-center pb-3 border-b border-[#3b4363]"><Store size={18} className="mr-2"/> {branchData.branch}</h4>
+                        <h4 className="text-[#60a5fa] font-black text-base mb-3 flex items-center pb-3 border-b border-[#3b4363]">
+                          <Store size={18} className="mr-2"/> {branchData.branch}
+                        </h4>
                         
                         {branchData.hasData ? (
                           <div className="overflow-hidden rounded-xl border border-[#1c2135]">
                             <table className="w-full text-left text-sm bg-[#1c2135]">
                               <thead>
                                 <tr className="text-[#94a3b8] bg-[#161a2b] border-b border-[#3b4363]">
-                                  <th className="py-3 px-3 font-medium">กะ</th>
+                                  <th className="py-3 px-3 font-medium">กะ (คลิกได้)</th>
                                   <th className="py-3 px-3 font-medium text-right">เงินสดส่ง</th>
                                   <th className="py-3 px-3 font-medium text-right">เงินโอน</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {branchData.shifts.map((s, sIdx) => (
-                                  <tr key={sIdx} className="border-b border-[#3b4363]/30 last:border-0 text-white">
-                                    <td className="py-3 px-3 text-xs">{s.shift}</td>
+                                  <tr 
+                                    key={sIdx} 
+                                    className={`border-b border-[#3b4363]/30 text-white last:border-0 ${s.records.length > 0 ? 'cursor-pointer hover:bg-[#2d334d]/80 transition' : ''}`}
+                                    onClick={() => {
+                                      if(s.records.length > 0) {
+                                        setSummaryPopupInfo({ title: `${branchData.branch} - กะ${s.shift}`, records: s.records });
+                                      }
+                                    }}
+                                  >
+                                    <td className="py-3 px-3 text-xs flex items-center gap-1.5">
+                                      {s.shift} {s.records.length > 0 && <span className="bg-blue-500/20 text-blue-400 rounded-full p-1"><Info size={12}/></span>}
+                                    </td>
                                     <td className="py-3 px-3 text-right font-mono font-bold">{s.cash !== null ? <span className="text-blue-300">{formatNum(s.cash)}</span> : <span className="text-slate-600">-</span>}</td>
                                     <td className="py-3 px-3 text-right font-mono font-bold">{s.transfer !== null ? <span className="text-[#34d399]">{formatNum(s.transfer)}</span> : <span className="text-slate-600">-</span>}</td>
                                   </tr>
@@ -464,7 +534,6 @@ export default function App() {
                      </div>
                    ))}
 
-                   {/* สรุปรวมทุกสาขา */}
                    <div className="bg-gradient-to-r from-blue-600/20 to-indigo-600/20 p-5 rounded-[20px] border border-blue-500/30 shadow-2xl mt-8">
                       <div className="text-center mb-4"><div className="text-[10px] text-blue-300 font-bold uppercase tracking-widest mb-1">ยอดรวมสุทธิทุกสาขา</div><div className="text-3xl font-black text-white">{formatNum(summary.grandTotalCash + summary.grandTotalTransfer)} <span className="text-sm font-normal">฿</span></div></div>
                       <div className="grid grid-cols-2 gap-3 text-center">
