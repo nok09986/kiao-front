@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Crown, Store, Lock, Unlock, CheckCircle, ShieldAlert, FileText, Search, BarChart2, ChevronLeft, Wallet, User, Calendar, Clock, MapPin, Trash2, Filter, AlertTriangle, Edit2, X, Info, Image as ImageIcon } from 'lucide-react';
+import { Crown, Store, Lock, Unlock, CheckCircle, ShieldAlert, FileText, Search, BarChart2, ChevronLeft, Wallet, User, Calendar, Clock, MapPin, Trash2, Filter, AlertTriangle, Edit2, X, Info, Image as ImageIcon, Plus } from 'lucide-react';
 
 // --- 1. นำเข้า Firebase ---
 import { initializeApp } from 'firebase/app';
@@ -80,14 +80,13 @@ export default function App() {
 
   const [editingRecord, setEditingRecord] = useState(null);
   const [summaryPopupInfo, setSummaryPopupInfo] = useState(null); 
-  const [previewImage, setPreviewImage] = useState(null); // State สำหรับดูรูปบิลจอใหญ่
+  const [previewImage, setPreviewImage] = useState(null); 
 
   const [formData, setFormData] = useState({
     recordDate: getTodayIso(), 
     shift: 'เช้า', cashierName: '', floatIn: '', actualCash: '', transferAmount: '',
-    transferSlipImage: null, // เก็บรูปสลิปโอนเงิน
-    expenseType: 'ค่าของในร้าน', expenseAmount: '', 
-    expenseSlipImage: null,  // เก็บรูปบิลรายจ่าย
+    transferSlipImage: null, 
+    expenses: [], // อาร์เรย์เก็บรายจ่ายหลายรายการ: [{id, type, detail, amount, image}]
     nextFloat: '', overAmount: '', shortAmount: '', notes: '',
   });
 
@@ -139,13 +138,93 @@ export default function App() {
     }
   };
 
+  // --- ฟังก์ชันจัดการ รายจ่ายแบบหลายรายการ (Form) ---
+  const addExpense = () => {
+    setFormData(prev => ({
+      ...prev,
+      expenses: [...(prev.expenses || []), { id: Date.now(), type: 'ค่าของในร้าน', detail: '', amount: '', image: null }]
+    }));
+  };
+
+  const updateExpense = (index, field, value) => {
+    setFormData(prev => {
+      const newExpenses = [...prev.expenses];
+      newExpenses[index][field] = value;
+      return { ...prev, expenses: newExpenses };
+    });
+  };
+
+  const removeExpense = (index) => {
+    setFormData(prev => {
+      const newExpenses = [...prev.expenses];
+      newExpenses.splice(index, 1);
+      return { ...prev, expenses: newExpenses };
+    });
+  };
+
+  const uploadExpenseImage = async (index, e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const base64 = await compressImage(file);
+      updateExpense(index, 'image', base64);
+    } catch (err) { showToast('เกิดข้อผิดพลาดในการแนบรูป', 'error'); }
+  };
+
+  // --- ฟังก์ชันจัดการ รายจ่ายแบบหลายรายการ (Edit Mode) ---
+  const editAddExpense = () => {
+    setEditingRecord(prev => ({
+      ...prev,
+      expenses: [...(prev.expenses || []), { id: Date.now(), type: 'ค่าของในร้าน', detail: '', amount: '', image: null }]
+    }));
+  };
+
+  const editUpdateExpense = (index, field, value) => {
+    setEditingRecord(prev => {
+      const newExpenses = [...prev.expenses];
+      newExpenses[index][field] = value;
+      return { ...prev, expenses: newExpenses };
+    });
+  };
+
+  const editRemoveExpense = (index) => {
+    setEditingRecord(prev => {
+      const newExpenses = [...prev.expenses];
+      newExpenses.splice(index, 1);
+      return { ...prev, expenses: newExpenses };
+    });
+  };
+
+  const editUploadExpenseImage = async (index, e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const base64 = await compressImage(file);
+      editUpdateExpense(index, 'image', base64);
+    } catch (err) { showToast('เกิดข้อผิดพลาดในการแนบรูป', 'error'); }
+  };
+
   const handleSaveShift = async () => {
     if (!formData.cashierName || !formData.actualCash) {
       showToast('กรุณากรอกชื่อพนักงานและเงินสด', 'error');
       return;
     }
+
+    // เช็คว่าถ้าระบุหมวดอื่นๆ ต้องใส่รายละเอียด
+    for (let exp of formData.expenses) {
+      if (exp.type === 'อื่นๆ' && !exp.detail) {
+        showToast('กรุณาระบุรายละเอียดรายจ่ายในหมวด "อื่นๆ"', 'error');
+        return;
+      }
+      if (!exp.amount) {
+        showToast('กรุณาระบุยอดเงินในรายจ่ายให้ครบถ้วน', 'error');
+        return;
+      }
+    }
+
     const docId = `TRX-${Date.now()}`;
     const savedDate = formatThaiDate(formData.recordDate); 
+    const totalExpenseAmt = formData.expenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
 
     const newRecord = {
       ...formData,
@@ -156,11 +235,12 @@ export default function App() {
       floatIn: Number(formData.floatIn) || 0,
       actualCash: Number(formData.actualCash) || 0,
       transferAmount: Number(formData.transferAmount) || 0,
-      expenseAmount: Number(formData.expenseAmount) || 0,
+      expenseAmount: totalExpenseAmt, // รวมยอดเพื่อความเข้ากันได้กับระบบเดิม
       nextFloat: Number(formData.nextFloat) || 0,
       overAmount: Number(formData.overAmount) || 0,
       shortAmount: Number(formData.shortAmount) || 0,
     };
+    
     try {
       await setDoc(doc(db, 'artifacts', 'kiao-shop-pos', 'public', 'data', 'kiao_shift_records', docId), newRecord);
       showToast(`บันทึกเรียบร้อย`, 'success');
@@ -168,7 +248,7 @@ export default function App() {
       setFormData({ 
         recordDate: getTodayIso(), 
         shift: 'เช้า', cashierName: '', floatIn: '', actualCash: '', transferAmount: '', transferSlipImage: null,
-        expenseType: 'ค่าของในร้าน', expenseAmount: '', expenseSlipImage: null, nextFloat: '', overAmount: '', shortAmount: '', notes: '' 
+        expenses: [], nextFloat: '', overAmount: '', shortAmount: '', notes: '' 
       });
       
       setIsHistoryUnlocked(true);
@@ -177,18 +257,38 @@ export default function App() {
   };
 
   const openEditModal = (record) => {
-    setEditingRecord(record);
+    // รองรับข้อมูลเก่าที่มีแค่ expenseAmount ช่องเดียว
+    let expensesList = record.expenses || [];
+    if (expensesList.length === 0 && Number(record.expenseAmount) > 0) {
+      expensesList = [{ 
+        id: Date.now(), 
+        type: record.expenseType || 'ค่าของในร้าน', 
+        detail: '', 
+        amount: record.expenseAmount, 
+        image: record.expenseSlipImage || null 
+      }];
+    }
+    setEditingRecord({ ...record, expenses: expensesList });
   };
 
   const handleUpdateRecord = async () => {
+    for (let exp of editingRecord.expenses) {
+      if (exp.type === 'อื่นๆ' && !exp.detail) {
+        return showToast('กรุณาระบุรายละเอียดรายจ่ายในหมวด "อื่นๆ"', 'error');
+      }
+    }
+
     try {
       const recordRef = doc(db, 'artifacts', 'kiao-shop-pos', 'public', 'data', 'kiao_shift_records', editingRecord.id);
+      const updatedExpenseTotal = editingRecord.expenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+
       await updateDoc(recordRef, {
         ...editingRecord,
         floatIn: Number(editingRecord.floatIn) || 0,
         actualCash: Number(editingRecord.actualCash) || 0,
         transferAmount: Number(editingRecord.transferAmount) || 0,
-        expenseAmount: Number(editingRecord.expenseAmount) || 0,
+        expenseAmount: updatedExpenseTotal,
+        expenses: editingRecord.expenses,
         nextFloat: Number(editingRecord.nextFloat) || 0,
         overAmount: Number(editingRecord.overAmount) || 0,
         shortAmount: Number(editingRecord.shortAmount) || 0,
@@ -218,7 +318,6 @@ export default function App() {
        showToast("⚠️ กรุณาเลือกวันที่ต้องการลบก่อนครับ", "error");
        return;
     }
-
     setConfirmDialog({
       show: true,
       requirePin: true,
@@ -301,15 +400,15 @@ export default function App() {
     <div className="min-h-screen bg-[#111526] font-sans flex justify-center">
       <div className="w-full max-w-md bg-[#161a2b] min-h-screen relative shadow-2xl overflow-x-hidden pb-10">
         
-        {/* --- Modal แก้ไขข้อมูลหน้าประวัติ (มีแก้ไขรูปภาพ) --- */}
+        {/* --- Modal แก้ไขข้อมูลหน้าประวัติ (แก้ไขรายจ่ายแบบหลายรายการ) --- */}
         {editingRecord && (
           <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-            <div className="bg-[#24293f] border border-[#3b4363] rounded-[2rem] p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95">
-              <div className="flex justify-between items-center mb-4">
+            <div className="bg-[#24293f] border border-[#3b4363] rounded-[2rem] p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95 flex flex-col max-h-[90vh]">
+              <div className="flex justify-between items-center mb-4 shrink-0">
                 <h3 className="text-white font-black text-lg flex items-center gap-2"><Edit2 className="text-blue-400" /> แก้ไขข้อมูลประวัติ</h3>
                 <button onClick={() => setEditingRecord(null)} className="p-2 text-slate-400"><X size={20}/></button>
               </div>
-              <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
+              <div className="space-y-4 overflow-y-auto pr-2 custom-scrollbar flex-1 pb-4">
                 <div><label className={labelStyle}>ชื่อพนักงาน</label><input type="text" className={inputStyle} value={editingRecord.cashierName} onChange={e => setEditingRecord({...editingRecord, cashierName: e.target.value})} /></div>
                 <div className="grid grid-cols-2 gap-2">
                   <div><label className={labelStyle}>ทอนเริ่มกะ</label><input type="number" className={inputStyle} value={editingRecord.floatIn} onChange={e => setEditingRecord({...editingRecord, floatIn: e.target.value})} /></div>
@@ -325,93 +424,121 @@ export default function App() {
                     </label>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className={labelStyle}>ประเภทรายจ่าย</label><input type="text" className={inputStyle} value={editingRecord.expenseType} onChange={e => setEditingRecord({...editingRecord, expenseType: e.target.value})} />
+
+                {/* ส่วนแก้ไขรายจ่ายแบบหลายรายการ */}
+                <div className="bg-[#1c2135] p-3 rounded-xl border border-[#3b4363]">
+                  <div className="flex justify-between items-center mb-2">
+                    <label className={labelStyle + " !mb-0"}>แก้ไขรายจ่าย</label>
+                    <button onClick={editAddExpense} className="text-[10px] bg-blue-500/20 text-blue-400 px-2 py-1 rounded">เพิ่มรายการ</button>
                   </div>
-                  <div>
-                    <label className={labelStyle}>ยอดรายจ่าย</label><input type="number" className={inputStyle} value={editingRecord.expenseAmount} onChange={e => setEditingRecord({...editingRecord, expenseAmount: e.target.value})} />
-                    <label className="flex flex-col items-center justify-center w-full h-12 border border-[#3b4363] rounded-lg cursor-pointer hover:bg-[#2d334d] bg-[#1c2135] overflow-hidden relative mt-1">
-                      {editingRecord.expenseSlipImage ? <img src={editingRecord.expenseSlipImage} className="w-full h-full object-cover opacity-60" /> : <div className="text-slate-500 text-[9px] font-bold">📸 บิลจ่าย</div>}
-                      <input type="file" className="hidden" accept="image/*" onChange={e => handleImageUpload(e, 'expenseSlipImage', true)} />
-                    </label>
+                  <div className="space-y-3">
+                    {editingRecord.expenses?.map((exp, idx) => (
+                      <div key={exp.id || idx} className="bg-[#24293f] p-2.5 rounded-lg border border-[#3b4363] relative">
+                        <button onClick={() => editRemoveExpense(idx)} className="absolute -top-2 -right-2 text-white bg-red-500 rounded-full p-0.5 shadow-md"><X size={12}/></button>
+                        <div className="grid grid-cols-2 gap-2 mb-2">
+                          <select className={inputStyle + " !p-2 !text-xs"} value={exp.type} onChange={e => editUpdateExpense(idx, 'type', e.target.value)}>
+                            <option value="ค่าของในร้าน">ค่าของในร้าน</option>
+                            <option value="เบิกค่าแรง">เบิกค่าแรง</option>
+                            <option value="อื่นๆ">อื่นๆ</option>
+                          </select>
+                          <input type="number" placeholder="ยอดเงิน" className={inputStyle + " !p-2 !text-xs"} value={exp.amount} onChange={e => editUpdateExpense(idx, 'amount', e.target.value)} />
+                        </div>
+                        {exp.type === 'อื่นๆ' && (
+                          <div className="mb-2">
+                            <input type="text" placeholder="ระบุรายละเอียด..." className={inputStyle + " !p-2 !text-xs"} value={exp.detail || ''} onChange={e => editUpdateExpense(idx, 'detail', e.target.value)} />
+                          </div>
+                        )}
+                        <label className="flex flex-col items-center justify-center w-full h-10 border border-dashed border-[#3b4363] rounded-lg cursor-pointer bg-[#1c2135] overflow-hidden relative">
+                          {exp.image ? <img src={exp.image} className="w-full h-full object-cover opacity-60" /> : <div className="text-slate-500 text-[10px] font-bold"><ImageIcon size={12} className="inline mr-1 opacity-50"/>แนบรูป</div>}
+                          <input type="file" className="hidden" accept="image/*" onChange={e => editUploadExpenseImage(idx, e)} />
+                        </label>
+                      </div>
+                    ))}
                   </div>
                 </div>
+
                 <div className="grid grid-cols-2 gap-2">
                   <div><label className={labelStyle}>เงินเกิน</label><input type="number" className={inputStyle} value={editingRecord.overAmount} onChange={e => setEditingRecord({...editingRecord, overAmount: e.target.value})} /></div>
                   <div><label className={labelStyle}>เงินขาด</label><input type="number" className={inputStyle} value={editingRecord.shortAmount} onChange={e => setEditingRecord({...editingRecord, shortAmount: e.target.value})} /></div>
                 </div>
                 <div><label className={labelStyle}>หมายเหตุ</label><textarea className={inputStyle} value={editingRecord.notes} onChange={e => setEditingRecord({...editingRecord, notes: e.target.value})} /></div>
               </div>
-              <button onClick={handleUpdateRecord} className="w-full mt-6 py-4 bg-emerald-600 text-white font-bold rounded-xl active:scale-95 transition shadow-lg">บันทึกการแก้ไข</button>
+              <button onClick={handleUpdateRecord} className="w-full shrink-0 mt-4 py-4 bg-emerald-600 text-white font-bold rounded-xl active:scale-95 transition shadow-lg">บันทึกการแก้ไข</button>
             </div>
           </div>
         )}
 
-        {/* --- Modal ป๊อปอัพหน้าสรุปยอดรวม (ดึงรูปสลิปมาโชว์ด้วย) --- */}
+        {/* --- Modal ป๊อปอัพหน้าสรุปยอดรวม (รองรับหลายบิลรายจ่าย) --- */}
         {summaryPopupInfo && (
           <div className="fixed inset-0 z-[150] bg-black/80 backdrop-blur-md flex items-center justify-center p-4" onClick={() => setSummaryPopupInfo(null)}>
-            <div className="bg-[#24293f] border border-[#3b4363] rounded-[2rem] p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
-              <div className="flex justify-between items-center mb-4">
+            <div className="bg-[#24293f] border border-[#3b4363] rounded-[2rem] p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95 flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
+              <div className="flex justify-between items-center mb-4 shrink-0">
                 <h3 className="text-white font-black text-lg flex items-center gap-2"><BarChart2 className="text-blue-400" /> {summaryPopupInfo.title}</h3>
                 <button onClick={() => setSummaryPopupInfo(null)} className="p-2 text-slate-400 bg-[#1c2135] rounded-full"><X size={18}/></button>
               </div>
-              <div className="max-h-[60vh] overflow-y-auto pr-1 custom-scrollbar space-y-4">
-                {summaryPopupInfo.records.map((r, i) => (
-                  <div key={i} className="bg-[#1c2135] p-4 rounded-2xl border border-[#3b4363]">
-                    <div className="flex justify-between items-center border-b border-[#3b4363] pb-2 mb-3">
-                      <div className="font-bold text-blue-400">พนักงาน: <span className="text-white">{r.cashierName}</span></div>
-                      <div className="text-xs text-slate-500">{r.time}</div>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-3 text-xs mb-3">
-                      <div className="bg-[#24293f] p-2 rounded-lg border border-[#374160]">
-                        <span className="text-slate-400 block mb-1">เงินทอนเริ่มกะ</span>
-                        <span className="text-white font-bold text-sm">{formatNum(r.floatIn)} ฿</span>
+              <div className="overflow-y-auto pr-1 custom-scrollbar space-y-4 flex-1">
+                {summaryPopupInfo.records.map((r, i) => {
+                   // แปลงข้อมูลเก่าให้เป็น Array เพื่อแสดงผลให้เหมือนข้อมูลใหม่
+                   const expList = r.expenses && r.expenses.length > 0 ? r.expenses : 
+                                   (Number(r.expenseAmount) > 0 ? [{ id: 1, type: r.expenseType, amount: r.expenseAmount, image: r.expenseSlipImage }] : []);
+
+                   return (
+                    <div key={i} className="bg-[#1c2135] p-4 rounded-2xl border border-[#3b4363]">
+                      <div className="flex justify-between items-center border-b border-[#3b4363] pb-2 mb-3">
+                        <div className="font-bold text-blue-400">พนักงาน: <span className="text-white">{r.cashierName}</span></div>
+                        <div className="text-xs text-slate-500">{r.time}</div>
                       </div>
-                      <div className="bg-[#24293f] p-2 rounded-lg border border-[#374160]">
-                        <span className="text-slate-400 block mb-1">หักทอนกะใหม่</span>
-                        <span className="text-blue-400 font-bold text-sm">{formatNum(r.nextFloat)} ฿</span>
+                      
+                      <div className="grid grid-cols-2 gap-3 text-xs mb-3">
+                        <div className="bg-[#24293f] p-2 rounded-lg border border-[#374160]">
+                          <span className="text-slate-400 block mb-1">เงินทอนเริ่มกะ</span>
+                          <span className="text-white font-bold text-sm">{formatNum(r.floatIn)} ฿</span>
+                        </div>
+                        <div className="bg-[#24293f] p-2 rounded-lg border border-[#374160]">
+                          <span className="text-slate-400 block mb-1">หักทอนกะใหม่</span>
+                          <span className="text-blue-400 font-bold text-sm">{formatNum(r.nextFloat)} ฿</span>
+                        </div>
                       </div>
-                    </div>
 
-                    <div className="bg-emerald-500/10 p-2.5 rounded-lg border border-emerald-500/20 mb-3 flex justify-between items-center">
-                      <span className="text-emerald-300 font-bold">ส่งเงินสดจริง</span>
-                      <span className="text-emerald-400 font-black text-lg">{formatNum((Number(r.actualCash)||0) - (Number(r.nextFloat)||0))} ฿</span>
-                    </div>
+                      <div className="bg-emerald-500/10 p-2.5 rounded-lg border border-emerald-500/20 mb-3 flex justify-between items-center">
+                        <span className="text-emerald-300 font-bold">ส่งเงินสดจริง</span>
+                        <span className="text-emerald-400 font-black text-lg">{formatNum((Number(r.actualCash)||0) - (Number(r.nextFloat)||0))} ฿</span>
+                      </div>
 
-                    <div className="space-y-1 text-xs text-slate-300">
-                      <div className="flex justify-between"><span className="text-slate-500">ยอดเงินโอน/QR:</span> <span>{formatNum(r.transferAmount)} ฿</span></div>
-                      {(Number(r.expenseAmount) > 0) && (
-                         <div className="flex justify-between text-rose-400"><span className="text-rose-500">รายจ่าย ({r.expenseType}):</span> <span>-{formatNum(r.expenseAmount)} ฿</span></div>
-                      )}
-                      {(Number(r.overAmount) > 0) && <div className="flex justify-between text-amber-400"><span>เงินเกิน:</span> <span>+{formatNum(r.overAmount)} ฿</span></div>}
-                      {(Number(r.shortAmount) > 0) && <div className="flex justify-between text-rose-400"><span>เงินขาด:</span> <span>-{formatNum(r.shortAmount)} ฿</span></div>}
-                    </div>
-
-                    {/* แสดงรูปสลิปในป๊อปอัพ */}
-                    {(r.transferSlipImage || r.expenseSlipImage) && (
-                      <div className="flex gap-2 mt-3 pt-3 border-t border-[#3b4363]">
-                        {r.transferSlipImage && (
-                          <div className="w-14 h-14 rounded-lg overflow-hidden border border-[#374160] cursor-pointer" onClick={() => setPreviewImage(r.transferSlipImage)}>
-                            <img src={r.transferSlipImage} className="w-full h-full object-cover" />
-                            <div className="text-center text-[8px] bg-[#1c2135] text-slate-400">สลิปโอน</div>
+                      <div className="space-y-1 text-xs text-slate-300">
+                        <div className="flex justify-between items-center">
+                           <span className="text-slate-500">ยอดเงินโอน/QR:</span> 
+                           <div className="flex items-center gap-2">
+                             {r.transferSlipImage && <span className="text-[10px] text-blue-400 bg-blue-500/10 px-1.5 rounded cursor-pointer border border-blue-500/20" onClick={() => setPreviewImage(r.transferSlipImage)}>📸 ดูสลิป</span>}
+                             <span>{formatNum(r.transferAmount)} ฿</span>
+                           </div>
+                        </div>
+                        
+                        {expList.length > 0 && (
+                          <div className="mt-2 pt-2 border-t border-[#3b4363]">
+                             <div className="text-rose-400 font-bold mb-1">รายการใช้จ่าย:</div>
+                             {expList.map((exp, eIdx) => (
+                               <div key={eIdx} className="flex justify-between items-center bg-[#24293f] p-1.5 rounded mb-1">
+                                  <div className="flex items-center gap-1.5">
+                                    {exp.image && <div className="w-6 h-6 rounded bg-slate-800 overflow-hidden cursor-pointer" onClick={() => setPreviewImage(exp.image)}><img src={exp.image} className="w-full h-full object-cover"/></div>}
+                                    <span className="text-rose-300 text-[10px]">{exp.type} {exp.detail && `(${exp.detail})`}</span>
+                                  </div>
+                                  <span className="text-rose-400 font-bold">-{formatNum(exp.amount)} ฿</span>
+                               </div>
+                             ))}
                           </div>
                         )}
-                        {r.expenseSlipImage && (
-                          <div className="w-14 h-14 rounded-lg overflow-hidden border border-[#374160] cursor-pointer" onClick={() => setPreviewImage(r.expenseSlipImage)}>
-                            <img src={r.expenseSlipImage} className="w-full h-full object-cover" />
-                            <div className="text-center text-[8px] bg-[#1c2135] text-slate-400">บิลจ่าย</div>
-                          </div>
-                        )}
-                      </div>
-                    )}
 
-                    {r.notes && <div className="mt-3 p-2 bg-[#2d334d] rounded-lg text-[10px] text-slate-400 border border-[#3b4363]">หมายเหตุ: {r.notes}</div>}
-                  </div>
-                ))}
+                        {(Number(r.overAmount) > 0) && <div className="flex justify-between text-amber-400 pt-1"><span>เงินเกิน:</span> <span>+{formatNum(r.overAmount)} ฿</span></div>}
+                        {(Number(r.shortAmount) > 0) && <div className="flex justify-between text-rose-400 pt-1"><span>เงินขาด:</span> <span>-{formatNum(r.shortAmount)} ฿</span></div>}
+                      </div>
+
+                      {r.notes && <div className="mt-3 p-2 bg-[#2d334d] rounded-lg text-[10px] text-slate-400 border border-[#3b4363]">หมายเหตุ: {r.notes}</div>}
+                    </div>
+                   );
+                })}
               </div>
-              <button onClick={() => setSummaryPopupInfo(null)} className="w-full mt-4 py-3.5 bg-blue-600 text-white font-bold rounded-xl active:scale-95 transition">ปิดหน้าต่าง</button>
+              <button onClick={() => setSummaryPopupInfo(null)} className="w-full shrink-0 mt-4 py-3.5 bg-blue-600 text-white font-bold rounded-xl active:scale-95 transition">ปิดหน้าต่าง</button>
             </div>
           </div>
         )}
@@ -534,20 +661,50 @@ export default function App() {
                     </div>
                   </div>
 
+                  {/* 🌟 ฟอร์มใหม่: ระบบรายจ่ายเพิ่มได้ไม่อั้น */}
                   <div className="bg-[#1c2135] p-4 rounded-xl border border-[#3b4363] mb-4">
-                    <label className={labelStyle}>รายจ่ายในกะ</label>
-                    <div className="grid grid-cols-2 gap-3 mb-3">
-                      <div>
-                        <select value={formData.expenseType} onChange={(e) => setFormData({...formData, expenseType: e.target.value})} className={inputStyle}><option>ค่าของในร้าน</option><option>เบิกค่าแรง</option><option>อื่นๆ</option></select>
-                      </div>
-                      <div>
-                         <input type="number" value={formData.expenseAmount} onChange={(e) => setFormData({...formData, expenseAmount: e.target.value})} className={`${inputStyle} text-red-400`} placeholder="0" />
-                         <label className="flex flex-col items-center justify-center w-full h-16 border-2 border-dashed border-[#3b4363] rounded-lg cursor-pointer hover:bg-[#2d334d] bg-[#1c2135] overflow-hidden relative mt-2">
-                             {formData.expenseSlipImage ? <img src={formData.expenseSlipImage} className="w-full h-full object-cover opacity-60" /> : <div className="text-slate-500 text-[10px] font-bold"><ImageIcon size={16} className="mx-auto mb-1 opacity-50"/>แนบบิลรายจ่าย</div>}
-                             <input type="file" className="hidden" accept="image/*" onChange={e => handleImageUpload(e, 'expenseSlipImage')} />
-                         </label>
-                      </div>
-                    </div>
+                     <div className="flex justify-between items-center mb-3">
+                        <label className={labelStyle + " !mb-0"}>รายการจ่ายเงินในกะ</label>
+                        <button onClick={addExpense} className="text-[10px] font-bold bg-blue-500/20 text-blue-400 px-3 py-1.5 rounded-lg flex items-center gap-1 active:scale-95 transition-all"><Plus size={12}/> เพิ่มรายจ่าย</button>
+                     </div>
+                     
+                     {formData.expenses.length === 0 && (
+                        <div className="text-center text-slate-500 text-xs py-4 bg-[#24293f] rounded-lg border border-dashed border-[#3b4363]">ไม่มีรายการจ่ายเงินในกะนี้</div>
+                     )}
+
+                     <div className="space-y-3">
+                        {formData.expenses.map((exp, idx) => (
+                           <div key={exp.id} className="bg-[#24293f] p-3 rounded-lg border border-[#3b4363] relative animate-in fade-in">
+                              <button onClick={() => removeExpense(idx)} className="absolute -top-2 -right-2 text-white bg-red-500 rounded-full p-1 shadow-md hover:bg-red-600 transition-colors"><X size={12}/></button>
+                              <div className="grid grid-cols-2 gap-2 mb-2">
+                                 <select className={inputStyle + " !p-2 !text-xs"} value={exp.type} onChange={e => updateExpense(idx, 'type', e.target.value)}>
+                                   <option value="ค่าของในร้าน">ค่าของในร้าน</option>
+                                   <option value="เบิกค่าแรง">เบิกค่าแรง</option>
+                                   <option value="อื่นๆ">อื่นๆ</option>
+                                 </select>
+                                 <input type="number" placeholder="ยอดเงิน" className={inputStyle + " !p-2 !text-xs text-rose-400 font-bold"} value={exp.amount} onChange={e => updateExpense(idx, 'amount', e.target.value)} />
+                              </div>
+                              {exp.type === 'อื่นๆ' && (
+                                 <div className="mb-2">
+                                   <input type="text" placeholder="ระบุรายละเอียด... (บังคับ)" className={inputStyle + " !p-2 !text-xs"} value={exp.detail} onChange={e => updateExpense(idx, 'detail', e.target.value)} />
+                                 </div>
+                              )}
+                              <label className="flex items-center justify-center w-full h-12 border border-dashed border-[#3b4363] rounded-lg cursor-pointer hover:bg-[#2d334d] bg-[#1c2135] overflow-hidden relative transition-colors">
+                                {exp.image ? <img src={exp.image} className="w-full h-full object-cover opacity-60" /> : <div className="text-slate-400 text-[10px] font-bold flex items-center gap-1"><ImageIcon size={14} className="opacity-50"/> แตะแนบรูปบิล</div>}
+                                <input type="file" className="hidden" accept="image/*" onChange={e => uploadExpenseImage(idx, e)} />
+                              </label>
+                           </div>
+                        ))}
+                     </div>
+
+                     {formData.expenses.length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-[#3b4363] text-right text-xs font-bold text-rose-400">
+                          ยอดรวมรายจ่าย: {formatNum(formData.expenses.reduce((s, e) => s + (Number(e.amount)||0), 0))} ฿
+                        </div>
+                     )}
+                  </div>
+
+                  <div className="bg-[#1c2135] p-4 rounded-xl border border-[#3b4363] mb-4">
                     <div className="grid grid-cols-2 gap-3">
                       <div><label className={labelStyle}>ยอดเงินเกิน</label><input type="number" value={formData.overAmount} onChange={(e) => setFormData({...formData, overAmount: e.target.value})} className={`${inputStyle} text-yellow-400`} placeholder="0" /></div>
                       <div><label className={labelStyle}>ยอดเงินหาย</label><input type="number" value={formData.shortAmount} onChange={(e) => setFormData({...formData, shortAmount: e.target.value})} className={`${inputStyle} text-red-400`} placeholder="0" /></div>
@@ -567,7 +724,10 @@ export default function App() {
                     </div>
                   ) : (
                     <>
-                      {historyData.filter(d => d.branch === activeBranch).map((data, index) => (
+                      {historyData.filter(d => d.branch === activeBranch).map((data, index) => {
+                         const expList = data.expenses && data.expenses.length > 0 ? data.expenses : 
+                                         (Number(data.expenseAmount) > 0 ? [{ id: 1, type: data.expenseType, amount: data.expenseAmount, image: data.expenseSlipImage }] : []);
+                         return (
                          <div key={data.id || index} className="bg-[#24293f] rounded-[20px] p-5 border border-[#374160] shadow-xl w-full mb-6">
                             <div className="flex justify-between items-center mb-4">
                               <div className="flex items-center space-x-2 bg-[#2d334d] px-3 py-1.5 rounded-lg border border-[#3b4363]"><Calendar size={14} className="text-pink-400" /><span className="text-[#5eead4] font-bold text-xs">{data.date}</span></div>
@@ -598,26 +758,26 @@ export default function App() {
                               <div className="col-span-2 truncate"><span className="text-slate-500">หมายเหตุ:</span> {data.notes || '-'}</div>
                             </div>
 
-                            {/* แสดงรูปสลิปในหน้าประวัติกะ */}
-                            {(data.transferSlipImage || data.expenseSlipImage) && (
-                              <div className="flex gap-2 mt-3 pt-3 border-t border-[#3b4363]">
+                            {/* แสดงรูปสลิปโอน และ บิลรายจ่ายต่างๆ ในหน้าประวัติกะ */}
+                            {(data.transferSlipImage || expList.length > 0) && (
+                              <div className="flex gap-2 mt-3 pt-3 border-t border-[#3b4363] overflow-x-auto pb-1 custom-scrollbar">
                                 {data.transferSlipImage && (
-                                  <div className="w-14 h-14 rounded-lg overflow-hidden border border-[#374160] cursor-pointer" onClick={() => setPreviewImage(data.transferSlipImage)}>
+                                  <div className="w-14 h-14 rounded-lg overflow-hidden border border-[#374160] cursor-pointer shrink-0" onClick={() => setPreviewImage(data.transferSlipImage)}>
                                     <img src={data.transferSlipImage} className="w-full h-full object-cover opacity-80 hover:opacity-100" />
-                                    <div className="text-center text-[8px] bg-[#1c2135] text-slate-400">สลิปโอน</div>
+                                    <div className="text-center text-[8px] bg-[#1c2135] text-blue-400">สลิปโอน</div>
                                   </div>
                                 )}
-                                {data.expenseSlipImage && (
-                                  <div className="w-14 h-14 rounded-lg overflow-hidden border border-[#374160] cursor-pointer" onClick={() => setPreviewImage(data.expenseSlipImage)}>
-                                    <img src={data.expenseSlipImage} className="w-full h-full object-cover opacity-80 hover:opacity-100" />
-                                    <div className="text-center text-[8px] bg-[#1c2135] text-slate-400">บิลจ่าย</div>
+                                {expList.map((exp, eIdx) => exp.image && (
+                                  <div key={eIdx} className="w-14 h-14 rounded-lg overflow-hidden border border-[#374160] cursor-pointer shrink-0" onClick={() => setPreviewImage(exp.image)}>
+                                    <img src={exp.image} className="w-full h-full object-cover opacity-80 hover:opacity-100" />
+                                    <div className="text-center text-[8px] bg-[#1c2135] text-rose-400 truncate px-0.5">{exp.type}</div>
                                   </div>
-                                )}
+                                ))}
                               </div>
                             )}
 
                          </div>
-                      ))}
+                      )})}
                       {historyData.filter(d => d.branch === activeBranch).length === 0 && (
                         <div className="text-center py-20 text-[#94a3b8] text-sm"><Search size={30} className="mx-auto mb-2 opacity-50"/> ไม่มีประวัติกะ</div>
                       )}
