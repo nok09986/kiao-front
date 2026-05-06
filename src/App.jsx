@@ -26,6 +26,9 @@ try {
   console.error("Firebase init error", e);
 }
 
+// --- รายการหมวดหมู่รายจ่ายที่บอสกำหนด ---
+const EXPENSE_TYPES = ['ค่าน้ำแข็ง', 'ค่าพัสดุ', 'เบิกค่าแรง', 'ค่าน้ำผลไม้', 'ค่าถุง', 'อื่นๆ'];
+
 // --- ฟังก์ชันย่อขนาดรูปภาพ ---
 const compressImage = (file) => {
   return new Promise((resolve) => {
@@ -86,7 +89,7 @@ export default function App() {
     recordDate: getTodayIso(), 
     shift: 'เช้า', cashierName: '', floatIn: '', actualCash: '', transferAmount: '',
     transferSlipImage: null, 
-    expenses: [], // อาร์เรย์เก็บรายจ่ายหลายรายการ: [{id, type, detail, amount, image}]
+    expenses: [], 
     nextFloat: '', overAmount: '', shortAmount: '', notes: '',
   });
 
@@ -138,11 +141,10 @@ export default function App() {
     }
   };
 
-  // --- ฟังก์ชันจัดการ รายจ่ายแบบหลายรายการ (Form) ---
   const addExpense = () => {
     setFormData(prev => ({
       ...prev,
-      expenses: [...(prev.expenses || []), { id: Date.now(), type: 'ค่าของในร้าน', detail: '', amount: '', image: null }]
+      expenses: [...(prev.expenses || []), { id: Date.now(), type: 'ค่าน้ำแข็ง', detail: '', amount: '', image: null }]
     }));
   };
 
@@ -171,11 +173,10 @@ export default function App() {
     } catch (err) { showToast('เกิดข้อผิดพลาดในการแนบรูป', 'error'); }
   };
 
-  // --- ฟังก์ชันจัดการ รายจ่ายแบบหลายรายการ (Edit Mode) ---
   const editAddExpense = () => {
     setEditingRecord(prev => ({
       ...prev,
-      expenses: [...(prev.expenses || []), { id: Date.now(), type: 'ค่าของในร้าน', detail: '', amount: '', image: null }]
+      expenses: [...(prev.expenses || []), { id: Date.now(), type: 'ค่าน้ำแข็ง', detail: '', amount: '', image: null }]
     }));
   };
 
@@ -210,7 +211,6 @@ export default function App() {
       return;
     }
 
-    // เช็คว่าถ้าระบุหมวดอื่นๆ ต้องใส่รายละเอียด
     for (let exp of formData.expenses) {
       if (exp.type === 'อื่นๆ' && !exp.detail) {
         showToast('กรุณาระบุรายละเอียดรายจ่ายในหมวด "อื่นๆ"', 'error');
@@ -235,7 +235,7 @@ export default function App() {
       floatIn: Number(formData.floatIn) || 0,
       actualCash: Number(formData.actualCash) || 0,
       transferAmount: Number(formData.transferAmount) || 0,
-      expenseAmount: totalExpenseAmt, // รวมยอดเพื่อความเข้ากันได้กับระบบเดิม
+      expenseAmount: totalExpenseAmt, 
       nextFloat: Number(formData.nextFloat) || 0,
       overAmount: Number(formData.overAmount) || 0,
       shortAmount: Number(formData.shortAmount) || 0,
@@ -244,25 +244,22 @@ export default function App() {
     try {
       await setDoc(doc(db, 'artifacts', 'kiao-shop-pos', 'public', 'data', 'kiao_shift_records', docId), newRecord);
       showToast(`บันทึกเรียบร้อย`, 'success');
-      
       setFormData({ 
         recordDate: getTodayIso(), 
         shift: 'เช้า', cashierName: '', floatIn: '', actualCash: '', transferAmount: '', transferSlipImage: null,
         expenses: [], nextFloat: '', overAmount: '', shortAmount: '', notes: '' 
       });
-      
       setIsHistoryUnlocked(true);
       setBranchTab('history');
     } catch (err) { showToast('บันทึกไม่สำเร็จ', 'error'); }
   };
 
   const openEditModal = (record) => {
-    // รองรับข้อมูลเก่าที่มีแค่ expenseAmount ช่องเดียว
     let expensesList = record.expenses || [];
     if (expensesList.length === 0 && Number(record.expenseAmount) > 0) {
       expensesList = [{ 
         id: Date.now(), 
-        type: record.expenseType || 'ค่าของในร้าน', 
+        type: record.expenseType || 'ค่าน้ำแข็ง', 
         detail: '', 
         amount: record.expenseAmount, 
         image: record.expenseSlipImage || null 
@@ -277,11 +274,9 @@ export default function App() {
         return showToast('กรุณาระบุรายละเอียดรายจ่ายในหมวด "อื่นๆ"', 'error');
       }
     }
-
     try {
       const recordRef = doc(db, 'artifacts', 'kiao-shop-pos', 'public', 'data', 'kiao_shift_records', editingRecord.id);
       const updatedExpenseTotal = editingRecord.expenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
-
       await updateDoc(recordRef, {
         ...editingRecord,
         floatIn: Number(editingRecord.floatIn) || 0,
@@ -343,32 +338,24 @@ export default function App() {
     const shifts = ['เช้า', 'บ่าย', 'ดึก'];
     let grandTotalCash = 0;
     let grandTotalTransfer = 0;
-
     const filteredHistory = summaryDate === 'all' ? historyData : historyData.filter(d => d.date === summaryDate);
-
     const groupedData = branches.map(branchName => {
       const branchRecords = filteredHistory.filter(d => d.branch === branchName);
       let branchTotalCash = 0;
       let branchTotalTransfer = 0;
-
       const shiftData = shifts.map(shiftName => {
         const shiftRecords = branchRecords.filter(d => d.shift === shiftName);
         if (shiftRecords.length === 0) return { shift: shiftName, cash: null, transfer: null, records: [] };
-
         const cash = shiftRecords.reduce((sum, r) => sum + ((Number(r.actualCash)||0) - (Number(r.nextFloat)||0)), 0);
         const transfer = shiftRecords.reduce((sum, r) => sum + (Number(r.transferAmount)||0), 0);
-
         branchTotalCash += cash;
         branchTotalTransfer += transfer;
         return { shift: shiftName, cash, transfer, records: shiftRecords };
       });
-
       grandTotalCash += branchTotalCash;
       grandTotalTransfer += branchTotalTransfer;
-
       return { branch: branchName, hasData: branchRecords.length > 0, shifts: shiftData, totalCash: branchTotalCash, totalTransfer: branchTotalTransfer };
     });
-
     return { groupedData, grandTotalCash, grandTotalTransfer };
   };
 
@@ -400,7 +387,7 @@ export default function App() {
     <div className="min-h-screen bg-[#111526] font-sans flex justify-center">
       <div className="w-full max-w-md bg-[#161a2b] min-h-screen relative shadow-2xl overflow-x-hidden pb-10">
         
-        {/* --- Modal แก้ไขข้อมูลหน้าประวัติ (แก้ไขรายจ่ายแบบหลายรายการ) --- */}
+        {/* --- Modal แก้ไขข้อมูลหน้าประวัติ --- */}
         {editingRecord && (
           <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
             <div className="bg-[#24293f] border border-[#3b4363] rounded-[2rem] p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95 flex flex-col max-h-[90vh]">
@@ -437,11 +424,9 @@ export default function App() {
                         <button onClick={() => editRemoveExpense(idx)} className="absolute -top-2 -right-2 text-white bg-red-500 rounded-full p-0.5 shadow-md"><X size={12}/></button>
                         <div className="grid grid-cols-2 gap-2 mb-2">
                           <select className={inputStyle + " !p-2 !text-xs"} value={exp.type} onChange={e => editUpdateExpense(idx, 'type', e.target.value)}>
-                            <option value="ค่าของในร้าน">ค่าของในร้าน</option>
-                            <option value="เบิกค่าแรง">เบิกค่าแรง</option>
-                            <option value="อื่นๆ">อื่นๆ</option>
+                            {EXPENSE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                           </select>
-                          <input type="number" placeholder="ยอดเงิน" className={inputStyle + " !p-2 !text-xs"} value={exp.amount} onChange={e => editUpdateExpense(idx, 'amount', e.target.value)} />
+                          <input type="number" placeholder="ยอดเงิน" className={inputStyle + " !p-2 !text-xs text-rose-400 font-bold"} value={exp.amount} onChange={e => editUpdateExpense(idx, 'amount', e.target.value)} />
                         </div>
                         {exp.type === 'อื่นๆ' && (
                           <div className="mb-2">
@@ -468,7 +453,7 @@ export default function App() {
           </div>
         )}
 
-        {/* --- Modal ป๊อปอัพหน้าสรุปยอดรวม (รองรับหลายบิลรายจ่าย) --- */}
+        {/* --- Modal ป๊อปอัพหน้าสรุปยอดรวม --- */}
         {summaryPopupInfo && (
           <div className="fixed inset-0 z-[150] bg-black/80 backdrop-blur-md flex items-center justify-center p-4" onClick={() => setSummaryPopupInfo(null)}>
             <div className="bg-[#24293f] border border-[#3b4363] rounded-[2rem] p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95 flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
@@ -478,9 +463,8 @@ export default function App() {
               </div>
               <div className="overflow-y-auto pr-1 custom-scrollbar space-y-4 flex-1">
                 {summaryPopupInfo.records.map((r, i) => {
-                   // แปลงข้อมูลเก่าให้เป็น Array เพื่อแสดงผลให้เหมือนข้อมูลใหม่
                    const expList = r.expenses && r.expenses.length > 0 ? r.expenses : 
-                                   (Number(r.expenseAmount) > 0 ? [{ id: 1, type: r.expenseType, amount: r.expenseAmount, image: r.expenseSlipImage }] : []);
+                                   (Number(r.expenseAmount) > 0 ? [{ id: 1, type: r.expenseType, amount: r.expenseAmount, image: r.expenseSlipImage, detail: '' }] : []);
 
                    return (
                     <div key={i} className="bg-[#1c2135] p-4 rounded-2xl border border-[#3b4363]">
@@ -560,7 +544,6 @@ export default function App() {
               <AlertTriangle size={48} className="text-red-400 mx-auto mb-4" />
               <h3 className="text-white font-bold text-lg mb-2">ยืนยันการดำเนินการ</h3>
               <p className="text-slate-400 text-sm mb-6 leading-relaxed whitespace-pre-line">{confirmDialog.message}</p>
-              
               {confirmDialog.requirePin && (
                 <input 
                   type="password" inputMode="numeric" placeholder="รหัสผ่าน (PIN)" 
@@ -569,7 +552,6 @@ export default function App() {
                   maxLength={4} autoFocus
                 />
               )}
-
               <div className="flex space-x-3">
                 <button onClick={() => { setConfirmDialog({ show: false, message: '', onConfirm: null, requirePin: false }); setConfirmPin(''); }} className="flex-1 py-3 rounded-xl bg-[#1c2135] text-white border border-[#3b4363]">ยกเลิก</button>
                 <button onClick={() => { confirmDialog.onConfirm(confirmPin); setConfirmDialog({ show: false, message: '', onConfirm: null, requirePin: false }); setConfirmPin(''); }} className="flex-1 py-3 rounded-xl bg-red-500 text-white font-bold">ยืนยัน</button>
@@ -626,15 +608,9 @@ export default function App() {
             <div className="p-4 overflow-y-auto">
               {branchTab === 'form' ? (
                 <div className="bg-[#24293f] p-5 rounded-[20px] border border-[#374160] shadow-xl">
-                  
                   <div className="mb-5 bg-[#1c2135] p-3 rounded-xl border border-blue-500/30">
-                    <label className={labelStyle}>📅 วันที่ประจำกะ (เปลี่ยนได้ถ้าปิดกะข้ามวัน)</label>
-                    <input 
-                      type="date" 
-                      value={formData.recordDate} 
-                      onChange={(e) => setFormData({...formData, recordDate: e.target.value})} 
-                      className={`${inputStyle} text-blue-300 font-bold tracking-widest`} 
-                    />
+                    <label className={labelStyle}>📅 วันที่ประจำกะ</label>
+                    <input type="date" value={formData.recordDate} onChange={(e) => setFormData({...formData, recordDate: e.target.value})} className={`${inputStyle} text-blue-300 font-bold tracking-widest`} />
                   </div>
 
                   <div className="grid grid-cols-2 gap-4 mb-4">
@@ -646,7 +622,7 @@ export default function App() {
                   <div className="bg-[#1c2135] p-4 rounded-xl border border-[#3b4363] mb-4">
                     <h3 className="text-white text-sm font-bold mb-3 flex items-center"><Wallet size={16} className="mr-2 text-emerald-400"/> ระบบเงินสด</h3>
                     <div className="space-y-3">
-                      <div><label className={labelStyle}>เงินสดนับได้จริง</label><input type="number" value={formData.actualCash} onChange={(e) => setFormData({...formData, actualCash: e.target.value})} className={`${inputStyle} border-emerald-500/50 bg-emerald-900/10 text-emerald-300 font-bold text-lg`} placeholder="0" /></div>
+                      <div><label className={labelStyle}>เงินสดในเก๊ะนับได้จริง</label><input type="number" value={formData.actualCash} onChange={(e) => setFormData({...formData, actualCash: e.target.value})} className={`${inputStyle} border-emerald-500/50 bg-emerald-900/10 text-emerald-300 font-bold text-lg`} placeholder="0" /></div>
                       <div className="grid grid-cols-2 gap-3">
                         <div><label className={labelStyle}>หักทอนกะใหม่</label><input type="number" value={formData.nextFloat} onChange={(e) => setFormData({...formData, nextFloat: e.target.value})} className={inputStyle} placeholder="0" /></div>
                         <div>
@@ -661,26 +637,22 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* 🌟 ฟอร์มใหม่: ระบบรายจ่ายเพิ่มได้ไม่อั้น */}
+                  {/* 🌟 ฟอร์มใหม่: ระบบรายจ่ายแบบปรับปรุงหมวดหมู่ตามบอสสั่ง */}
                   <div className="bg-[#1c2135] p-4 rounded-xl border border-[#3b4363] mb-4">
                      <div className="flex justify-between items-center mb-3">
                         <label className={labelStyle + " !mb-0"}>รายการจ่ายเงินในกะ</label>
                         <button onClick={addExpense} className="text-[10px] font-bold bg-blue-500/20 text-blue-400 px-3 py-1.5 rounded-lg flex items-center gap-1 active:scale-95 transition-all"><Plus size={12}/> เพิ่มรายจ่าย</button>
                      </div>
-                     
                      {formData.expenses.length === 0 && (
                         <div className="text-center text-slate-500 text-xs py-4 bg-[#24293f] rounded-lg border border-dashed border-[#3b4363]">ไม่มีรายการจ่ายเงินในกะนี้</div>
                      )}
-
                      <div className="space-y-3">
                         {formData.expenses.map((exp, idx) => (
                            <div key={exp.id} className="bg-[#24293f] p-3 rounded-lg border border-[#3b4363] relative animate-in fade-in">
-                              <button onClick={() => removeExpense(idx)} className="absolute -top-2 -right-2 text-white bg-red-500 rounded-full p-1 shadow-md hover:bg-red-600 transition-colors"><X size={12}/></button>
+                              <button onClick={() => removeExpense(idx)} className="absolute -top-2 -right-2 text-white bg-red-500 rounded-full p-1 shadow-md"><X size={12}/></button>
                               <div className="grid grid-cols-2 gap-2 mb-2">
                                  <select className={inputStyle + " !p-2 !text-xs"} value={exp.type} onChange={e => updateExpense(idx, 'type', e.target.value)}>
-                                   <option value="ค่าของในร้าน">ค่าของในร้าน</option>
-                                   <option value="เบิกค่าแรง">เบิกค่าแรง</option>
-                                   <option value="อื่นๆ">อื่นๆ</option>
+                                   {EXPENSE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                                  </select>
                                  <input type="number" placeholder="ยอดเงิน" className={inputStyle + " !p-2 !text-xs text-rose-400 font-bold"} value={exp.amount} onChange={e => updateExpense(idx, 'amount', e.target.value)} />
                               </div>
@@ -689,14 +661,13 @@ export default function App() {
                                    <input type="text" placeholder="ระบุรายละเอียด... (บังคับ)" className={inputStyle + " !p-2 !text-xs"} value={exp.detail} onChange={e => updateExpense(idx, 'detail', e.target.value)} />
                                  </div>
                               )}
-                              <label className="flex items-center justify-center w-full h-12 border border-dashed border-[#3b4363] rounded-lg cursor-pointer hover:bg-[#2d334d] bg-[#1c2135] overflow-hidden relative transition-colors">
-                                {exp.image ? <img src={exp.image} className="w-full h-full object-cover opacity-60" /> : <div className="text-slate-400 text-[10px] font-bold flex items-center gap-1"><ImageIcon size={14} className="opacity-50"/> แตะแนบรูปบิล</div>}
+                              <label className="flex items-center justify-center w-full h-12 border border-dashed border-[#3b4363] rounded-lg cursor-pointer hover:bg-[#2d334d] bg-[#1c2135] overflow-hidden relative">
+                                {exp.image ? <img src={exp.image} className="w-full h-full object-cover opacity-60" /> : <div className="text-slate-400 text-[10px] font-bold flex items-center gap-1"><ImageIcon size={14}/> แตะแนบรูปบิล</div>}
                                 <input type="file" className="hidden" accept="image/*" onChange={e => uploadExpenseImage(idx, e)} />
                               </label>
                            </div>
                         ))}
                      </div>
-
                      {formData.expenses.length > 0 && (
                         <div className="mt-3 pt-3 border-t border-[#3b4363] text-right text-xs font-bold text-rose-400">
                           ยอดรวมรายจ่าย: {formatNum(formData.expenses.reduce((s, e) => s + (Number(e.amount)||0), 0))} ฿
@@ -733,49 +704,38 @@ export default function App() {
                               <div className="flex items-center space-x-2 bg-[#2d334d] px-3 py-1.5 rounded-lg border border-[#3b4363]"><Calendar size={14} className="text-pink-400" /><span className="text-[#5eead4] font-bold text-xs">{data.date}</span></div>
                               <div className="flex items-center space-x-2">
                                 <div className="text-xs font-bold text-slate-400 mr-2">{data.time}</div>
-                                <button onClick={() => openEditModal(data)} className="p-2 bg-blue-500/10 text-blue-400 rounded-lg hover:bg-blue-500/20 active:scale-90 transition"><Edit2 size={16} /></button>
-                                <button onClick={() => handleDeleteRecord(data.id)} className="p-2 bg-red-500/10 text-red-400 rounded-lg hover:bg-red-500/20 active:scale-90 transition"><Trash2 size={16} /></button>
+                                <button onClick={() => openEditModal(data)} className="p-2 bg-blue-500/10 text-blue-400 rounded-lg active:scale-90 transition"><Edit2 size={16} /></button>
+                                <button onClick={() => handleDeleteRecord(data.id)} className="p-2 bg-red-500/10 text-red-400 rounded-lg active:scale-90 transition"><Trash2 size={16} /></button>
                               </div>
                             </div>
                             <div className="bg-[#2d334d] p-4 rounded-xl border border-[#3b4363] mb-3">
                               <div className="text-[#94a3b8] text-[10px] font-bold mb-1 uppercase tracking-widest">ยอดนำส่งสุทธิรวม</div>
                               <div className="text-2xl font-extrabold text-[#fcd34d]">{formatNum(((Number(data.actualCash) || 0) - (Number(data.nextFloat) || 0)) + (Number(data.transferAmount) || 0))} ฿</div>
                             </div>
-                            
                             <div className="grid grid-cols-2 gap-2 text-xs mb-3">
-                              <div className="bg-[#1c2135] p-2.5 rounded-xl border border-[#3b4363]">
-                                <span className="text-slate-400 block mb-1">เงินทอนเริ่มกะ</span>
-                                <span className="text-white font-bold">{formatNum(data.floatIn)} ฿</span>
-                              </div>
-                              <div className="bg-[#1c2135] p-2.5 rounded-xl border border-[#3b4363]">
-                                <span className="text-slate-400 block mb-1">ทอนกะใหม่</span>
-                                <span className="text-blue-400 font-bold">{formatNum(data.nextFloat)} ฿</span>
-                              </div>
+                              <div className="bg-[#1c2135] p-2.5 rounded-xl border border-[#3b4363]"><span className="text-slate-400 block mb-1">เงินทอนเริ่มกะ</span><span className="text-white font-bold">{formatNum(data.floatIn)} ฿</span></div>
+                              <div className="bg-[#1c2135] p-2.5 rounded-xl border border-[#3b4363]"><span className="text-slate-400 block mb-1">ทอนกะใหม่</span><span className="text-blue-400 font-bold">{formatNum(data.nextFloat)} ฿</span></div>
                             </div>
-
                             <div className="bg-[#1c2135] p-3 rounded-xl border border-[#3b4363] text-xs grid grid-cols-2 gap-2 text-slate-300">
                               <div><span className="text-slate-500">พนักงาน:</span> {data.cashierName}</div><div><span className="text-slate-500">กะ:</span> {data.shift}</div>
                               <div className="col-span-2 truncate"><span className="text-slate-500">หมายเหตุ:</span> {data.notes || '-'}</div>
                             </div>
-
-                            {/* แสดงรูปสลิปโอน และ บิลรายจ่ายต่างๆ ในหน้าประวัติกะ */}
                             {(data.transferSlipImage || expList.length > 0) && (
                               <div className="flex gap-2 mt-3 pt-3 border-t border-[#3b4363] overflow-x-auto pb-1 custom-scrollbar">
                                 {data.transferSlipImage && (
                                   <div className="w-14 h-14 rounded-lg overflow-hidden border border-[#374160] cursor-pointer shrink-0" onClick={() => setPreviewImage(data.transferSlipImage)}>
-                                    <img src={data.transferSlipImage} className="w-full h-full object-cover opacity-80 hover:opacity-100" />
+                                    <img src={data.transferSlipImage} className="w-full h-full object-cover opacity-80" />
                                     <div className="text-center text-[8px] bg-[#1c2135] text-blue-400">สลิปโอน</div>
                                   </div>
                                 )}
                                 {expList.map((exp, eIdx) => exp.image && (
                                   <div key={eIdx} className="w-14 h-14 rounded-lg overflow-hidden border border-[#374160] cursor-pointer shrink-0" onClick={() => setPreviewImage(exp.image)}>
-                                    <img src={exp.image} className="w-full h-full object-cover opacity-80 hover:opacity-100" />
+                                    <img src={exp.image} className="w-full h-full object-cover opacity-80" />
                                     <div className="text-center text-[8px] bg-[#1c2135] text-rose-400 truncate px-0.5">{exp.type}</div>
                                   </div>
                                 ))}
                               </div>
                             )}
-
                          </div>
                       )})}
                       {historyData.filter(d => d.branch === activeBranch).length === 0 && (
@@ -789,21 +749,20 @@ export default function App() {
           </div>
         )}
 
-        {/* ================= สรุปยอดรวม (ตารางแยกสาขา + ป๊อปอัพ) ================= */}
+        {/* ================= สรุปยอดรวม ================= */}
         {currentView === 'summary' && (
           <div className="flex flex-col h-full">
             <div className="bg-[#1e2336] p-4 flex items-center border-b border-[#2d334d] sticky top-0 z-10 shadow-lg">
               <button onClick={() => { setCurrentView('menu'); setIsUnlocked(false); setPin(''); }} className="p-2 bg-[#24293f] rounded-xl text-white mr-4 border border-[#374160]"><ChevronLeft size={20} /></button>
               <h2 className="text-lg font-bold text-[#fcd34d] flex items-center"><Lock size={16} className="mr-2"/> สรุปยอดรวม (แยกสาขา)</h2>
             </div>
-            
             <div className="p-4">
               {!isUnlocked ? (
                 <div className="bg-[#24293f] p-8 rounded-[20px] border border-[#374160] shadow-2xl text-center mt-6">
                   <div className="w-16 h-16 bg-[#1c2135] rounded-full flex items-center justify-center mx-auto mb-4 border border-[#3b4363]"><Lock size={30} className="text-[#64748b]" /></div>
                   <h2 className="text-lg font-bold text-white mb-6">รหัสผ่านผู้จัดการ</h2>
                   <input type="password" value={pin} onChange={(e) => setPin(e.target.value)} className="w-full bg-[#1c2135] border border-[#3b4363] text-white text-center text-3xl tracking-[0.5em] p-4 rounded-xl focus:border-blue-500 mb-6 font-mono" maxLength={4} placeholder="****" onKeyDown={(e) => e.key === 'Enter' && handleLogin('summary')} />
-                  <button onClick={() => handleLogin('summary')} className="w-full bg-blue-600 text-white font-bold py-4 rounded-xl active:scale-95 transition"><Unlock size={18} className="mr-2 inline-block" /> ปลดล็อคข้อมูล</button>
+                  <button onClick={() => handleLogin('summary')} className="w-full bg-blue-600 text-white font-bold py-4 rounded-xl active:scale-95 transition flex justify-center items-center"><Unlock size={18} className="mr-2" /> ปลดล็อคข้อมูล</button>
                 </div>
               ) : (
                 <div className="pb-10">
@@ -815,62 +774,30 @@ export default function App() {
                           {availableDates.map(d => (<option key={d} value={d}>วันที่ {d}</option>))}
                         </select>
                       </div>
-                      
-                      <button onClick={handleDeleteSpecificHistory} className="p-3 bg-red-500/10 text-red-500 rounded-xl border border-red-500/20 active:scale-95 transition shadow-lg">
-                        <Trash2 size={18}/>
-                      </button>
+                      <button onClick={handleDeleteSpecificHistory} className="p-3 bg-red-500/10 text-red-500 rounded-xl border border-red-500/20 active:scale-95 transition shadow-lg"><Trash2 size={18}/></button>
                    </div>
-
                    {summary.groupedData.map((branchData, idx) => (
                      <div key={idx} className="bg-[#24293f] p-4 rounded-[20px] border border-[#3b4363] shadow-xl mb-6">
-                        <h4 className="text-[#60a5fa] font-black text-base mb-3 flex items-center pb-3 border-b border-[#3b4363]">
-                          <Store size={18} className="mr-2"/> {branchData.branch}
-                        </h4>
-                        
+                        <h4 className="text-[#60a5fa] font-black text-base mb-3 flex items-center pb-3 border-b border-[#3b4363]"><Store size={18} className="mr-2"/> {branchData.branch}</h4>
                         {branchData.hasData ? (
                           <div className="overflow-hidden rounded-xl border border-[#1c2135]">
                             <table className="w-full text-left text-sm bg-[#1c2135]">
-                              <thead>
-                                <tr className="text-[#94a3b8] bg-[#161a2b] border-b border-[#3b4363]">
-                                  <th className="py-3 px-3 font-medium">กะ (คลิกได้)</th>
-                                  <th className="py-3 px-3 font-medium text-right">เงินสดส่ง</th>
-                                  <th className="py-3 px-3 font-medium text-right">เงินโอน</th>
-                                </tr>
-                              </thead>
+                              <thead><tr className="text-[#94a3b8] bg-[#161a2b] border-b border-[#3b4363]"><th className="py-3 px-3 font-medium">กะ (คลิกได้)</th><th className="py-3 px-3 font-medium text-right">เงินสดส่ง</th><th className="py-3 px-3 font-medium text-right">เงินโอน</th></tr></thead>
                               <tbody>
                                 {branchData.shifts.map((s, sIdx) => (
-                                  <tr 
-                                    key={sIdx} 
-                                    className={`border-b border-[#3b4363]/30 text-white last:border-0 ${s.records.length > 0 ? 'cursor-pointer hover:bg-[#2d334d]/80 transition' : ''}`}
-                                    onClick={() => {
-                                      if(s.records.length > 0) {
-                                        setSummaryPopupInfo({ title: `${branchData.branch} - กะ${s.shift}`, records: s.records });
-                                      }
-                                    }}
-                                  >
-                                    <td className="py-3 px-3 text-xs flex items-center gap-1.5">
-                                      {s.shift} {s.records.length > 0 && <span className="bg-blue-500/20 text-blue-400 rounded-full p-1"><Info size={12}/></span>}
-                                    </td>
+                                  <tr key={sIdx} className={`border-b border-[#3b4363]/30 text-white last:border-0 ${s.records.length > 0 ? 'cursor-pointer hover:bg-[#2d334d]/80 transition' : ''}`} onClick={() => s.records.length > 0 && setSummaryPopupInfo({ title: `${branchData.branch} - กะ${s.shift}`, records: s.records })}>
+                                    <td className="py-3 px-3 text-xs flex items-center gap-1.5">{s.shift} {s.records.length > 0 && <span className="bg-blue-500/20 text-blue-400 rounded-full p-1"><Info size={12}/></span>}</td>
                                     <td className="py-3 px-3 text-right font-mono font-bold">{s.cash !== null ? <span className="text-blue-300">{formatNum(s.cash)}</span> : <span className="text-slate-600">-</span>}</td>
                                     <td className="py-3 px-3 text-right font-mono font-bold">{s.transfer !== null ? <span className="text-[#34d399]">{formatNum(s.transfer)}</span> : <span className="text-slate-600">-</span>}</td>
                                   </tr>
                                 ))}
                               </tbody>
-                              <tfoot>
-                                <tr className="bg-[#2d334d] border-t border-[#3b4363]">
-                                  <td className="py-3 px-3 text-xs text-[#fcd34d] font-bold">รวม</td>
-                                  <td className="py-3 px-3 text-right text-[#fcd34d] font-mono font-black">{formatNum(branchData.totalCash)}</td>
-                                  <td className="py-3 px-3 text-right text-[#fcd34d] font-mono font-black">{formatNum(branchData.totalTransfer)}</td>
-                                </tr>
-                              </tfoot>
+                              <tfoot><tr className="bg-[#2d334d] border-t border-[#3b4363]"><td className="py-3 px-3 text-xs text-[#fcd34d] font-bold">รวม</td><td className="py-3 px-3 text-right text-[#fcd34d] font-mono font-black">{formatNum(branchData.totalCash)}</td><td className="py-3 px-3 text-right text-[#fcd34d] font-mono font-black">{formatNum(branchData.totalTransfer)}</td></tr></tfoot>
                             </table>
                           </div>
-                        ) : (
-                          <div className="text-center py-6 text-slate-500 text-xs bg-[#1c2135] rounded-xl border border-[#3b4363]">ไม่มีข้อมูลในวันดังกล่าว</div>
-                        )}
+                        ) : (<div className="text-center py-6 text-slate-500 text-xs bg-[#1c2135] rounded-xl border border-[#3b4363]">ไม่มีข้อมูลในวันดังกล่าว</div>)}
                      </div>
                    ))}
-
                    <div className="bg-gradient-to-r from-blue-600/20 to-indigo-600/20 p-5 rounded-[20px] border border-blue-500/30 shadow-2xl mt-8">
                       <div className="text-center mb-4"><div className="text-[10px] text-blue-300 font-bold uppercase tracking-widest mb-1">ยอดรวมสุทธิทุกสาขา</div><div className="text-3xl font-black text-white">{formatNum(summary.grandTotalCash + summary.grandTotalTransfer)} <span className="text-sm font-normal">฿</span></div></div>
                       <div className="grid grid-cols-2 gap-3 text-center">
@@ -883,7 +810,6 @@ export default function App() {
             </div>
           </div>
         )}
-
       </div>
     </div>
   );
