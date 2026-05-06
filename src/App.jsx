@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Crown, Store, Lock, Unlock, CheckCircle, ShieldAlert, FileText, Search, BarChart2, ChevronLeft, Wallet, User, Calendar, Clock, MapPin, Trash2, Filter, AlertTriangle, Edit2, X, Info } from 'lucide-react';
+import { Crown, Store, Lock, Unlock, CheckCircle, ShieldAlert, FileText, Search, BarChart2, ChevronLeft, Wallet, User, Calendar, Clock, MapPin, Trash2, Filter, AlertTriangle, Edit2, X, Info, Image as ImageIcon } from 'lucide-react';
 
 // --- 1. นำเข้า Firebase ---
 import { initializeApp } from 'firebase/app';
@@ -26,7 +26,29 @@ try {
   console.error("Firebase init error", e);
 }
 
-// ฟังก์ชันหาวันที่ปัจจุบันสำหรับ Input Type Date (YYYY-MM-DD)
+// --- ฟังก์ชันย่อขนาดรูปภาพ ---
+const compressImage = (file) => {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target.result;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 800; const MAX_HEIGHT = 800;
+        let width = img.width; let height = img.height;
+        if (width > height) { if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
+        } else { if (height > MAX_HEIGHT) { width *= MAX_HEIGHT / height; height = MAX_HEIGHT; } }
+        canvas.width = width; canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.6));
+      };
+    };
+  });
+};
+
 const getTodayIso = () => {
   const d = new Date();
   const year = d.getFullYear();
@@ -35,7 +57,6 @@ const getTodayIso = () => {
   return `${year}-${month}-${day}`;
 };
 
-// ฟังก์ชันแปลง YYYY-MM-DD เป็นวันที่ไทย (DD/MM/YYYY)
 const formatThaiDate = (isoStr) => {
   if(!isoStr) return '';
   const [y, m, d] = isoStr.split('-');
@@ -53,20 +74,21 @@ export default function App() {
   const ADMIN_PIN = '5930'; 
 
   const [summaryDate, setSummaryDate] = useState('all');
-  
-  // อัปเกรด Dialog ให้รองรับรหัสผ่าน
   const [confirmDialog, setConfirmDialog] = useState({ show: false, message: '', onConfirm: null, requirePin: false });
   const [confirmPin, setConfirmPin] = useState('');
-
   const [isOnline, setIsOnline] = useState(false);
 
   const [editingRecord, setEditingRecord] = useState(null);
   const [summaryPopupInfo, setSummaryPopupInfo] = useState(null); 
+  const [previewImage, setPreviewImage] = useState(null); // State สำหรับดูรูปบิลจอใหญ่
 
   const [formData, setFormData] = useState({
-    recordDate: getTodayIso(), // เพิ่มฟิลด์วันที่
+    recordDate: getTodayIso(), 
     shift: 'เช้า', cashierName: '', floatIn: '', actualCash: '', transferAmount: '',
-    expenseType: 'ค่าของในร้าน', expenseAmount: '', nextFloat: '', overAmount: '', shortAmount: '', notes: '',
+    transferSlipImage: null, // เก็บรูปสลิปโอนเงิน
+    expenseType: 'ค่าของในร้าน', expenseAmount: '', 
+    expenseSlipImage: null,  // เก็บรูปบิลรายจ่าย
+    nextFloat: '', overAmount: '', shortAmount: '', notes: '',
   });
 
   const [historyData, setHistoryData] = useState([]);
@@ -102,19 +124,34 @@ export default function App() {
     }
   };
 
+  const handleImageUpload = async (e, field, isEditing = false) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const compressedBase64 = await compressImage(file);
+      if (isEditing) {
+        setEditingRecord(prev => ({ ...prev, [field]: compressedBase64 }));
+      } else {
+        setFormData(prev => ({ ...prev, [field]: compressedBase64 }));
+      }
+    } catch (err) {
+      showToast('เกิดข้อผิดพลาดในการแนบรูป', 'error');
+    }
+  };
+
   const handleSaveShift = async () => {
     if (!formData.cashierName || !formData.actualCash) {
       showToast('กรุณากรอกชื่อพนักงานและเงินสด', 'error');
       return;
     }
     const docId = `TRX-${Date.now()}`;
-    const savedDate = formatThaiDate(formData.recordDate); // แปลงวันที่ที่เลือกเป็น พ.ศ.
+    const savedDate = formatThaiDate(formData.recordDate); 
 
     const newRecord = {
       ...formData,
       branch: activeBranch, 
       timestamp: Date.now(),
-      date: savedDate, // ใช้วันที่ที่เลือก
+      date: savedDate, 
       time: new Date().toTimeString().slice(0, 8),
       floatIn: Number(formData.floatIn) || 0,
       actualCash: Number(formData.actualCash) || 0,
@@ -128,11 +165,10 @@ export default function App() {
       await setDoc(doc(db, 'artifacts', 'kiao-shop-pos', 'public', 'data', 'kiao_shift_records', docId), newRecord);
       showToast(`บันทึกเรียบร้อย`, 'success');
       
-      // รีเซ็ตฟอร์มกลับค่าเดิม
       setFormData({ 
         recordDate: getTodayIso(), 
-        shift: 'เช้า', cashierName: '', floatIn: '', actualCash: '', transferAmount: '', 
-        expenseType: 'ค่าของในร้าน', expenseAmount: '', nextFloat: '', overAmount: '', shortAmount: '', notes: '' 
+        shift: 'เช้า', cashierName: '', floatIn: '', actualCash: '', transferAmount: '', transferSlipImage: null,
+        expenseType: 'ค่าของในร้าน', expenseAmount: '', expenseSlipImage: null, nextFloat: '', overAmount: '', shortAmount: '', notes: '' 
       });
       
       setIsHistoryUnlocked(true);
@@ -265,7 +301,7 @@ export default function App() {
     <div className="min-h-screen bg-[#111526] font-sans flex justify-center">
       <div className="w-full max-w-md bg-[#161a2b] min-h-screen relative shadow-2xl overflow-x-hidden pb-10">
         
-        {/* --- Modal แก้ไขข้อมูลหน้าประวัติ --- */}
+        {/* --- Modal แก้ไขข้อมูลหน้าประวัติ (มีแก้ไขรูปภาพ) --- */}
         {editingRecord && (
           <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
             <div className="bg-[#24293f] border border-[#3b4363] rounded-[2rem] p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95">
@@ -281,11 +317,25 @@ export default function App() {
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div><label className={labelStyle}>หักทอนใหม่</label><input type="number" className={inputStyle} value={editingRecord.nextFloat} onChange={e => setEditingRecord({...editingRecord, nextFloat: e.target.value})} /></div>
-                  <div><label className={labelStyle}>ยอดโอน/QR</label><input type="number" className={inputStyle} value={editingRecord.transferAmount} onChange={e => setEditingRecord({...editingRecord, transferAmount: e.target.value})} /></div>
+                  <div>
+                    <label className={labelStyle}>ยอดโอน/QR</label><input type="number" className={inputStyle} value={editingRecord.transferAmount} onChange={e => setEditingRecord({...editingRecord, transferAmount: e.target.value})} />
+                    <label className="flex flex-col items-center justify-center w-full h-12 border border-[#3b4363] rounded-lg cursor-pointer hover:bg-[#2d334d] bg-[#1c2135] overflow-hidden relative mt-1">
+                      {editingRecord.transferSlipImage ? <img src={editingRecord.transferSlipImage} className="w-full h-full object-cover opacity-60" /> : <div className="text-slate-500 text-[9px] font-bold">📸 สลิปโอน</div>}
+                      <input type="file" className="hidden" accept="image/*" onChange={e => handleImageUpload(e, 'transferSlipImage', true)} />
+                    </label>
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                  <div><label className={labelStyle}>รายจ่าย</label><input type="number" className={inputStyle} value={editingRecord.expenseAmount} onChange={e => setEditingRecord({...editingRecord, expenseAmount: e.target.value})} /></div>
-                  <div><label className={labelStyle}>ค่าอะไร</label><input type="text" className={inputStyle} value={editingRecord.expenseType} onChange={e => setEditingRecord({...editingRecord, expenseType: e.target.value})} /></div>
+                  <div>
+                    <label className={labelStyle}>ประเภทรายจ่าย</label><input type="text" className={inputStyle} value={editingRecord.expenseType} onChange={e => setEditingRecord({...editingRecord, expenseType: e.target.value})} />
+                  </div>
+                  <div>
+                    <label className={labelStyle}>ยอดรายจ่าย</label><input type="number" className={inputStyle} value={editingRecord.expenseAmount} onChange={e => setEditingRecord({...editingRecord, expenseAmount: e.target.value})} />
+                    <label className="flex flex-col items-center justify-center w-full h-12 border border-[#3b4363] rounded-lg cursor-pointer hover:bg-[#2d334d] bg-[#1c2135] overflow-hidden relative mt-1">
+                      {editingRecord.expenseSlipImage ? <img src={editingRecord.expenseSlipImage} className="w-full h-full object-cover opacity-60" /> : <div className="text-slate-500 text-[9px] font-bold">📸 บิลจ่าย</div>}
+                      <input type="file" className="hidden" accept="image/*" onChange={e => handleImageUpload(e, 'expenseSlipImage', true)} />
+                    </label>
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div><label className={labelStyle}>เงินเกิน</label><input type="number" className={inputStyle} value={editingRecord.overAmount} onChange={e => setEditingRecord({...editingRecord, overAmount: e.target.value})} /></div>
@@ -298,7 +348,7 @@ export default function App() {
           </div>
         )}
 
-        {/* --- Modal ป๊อปอัพหน้าสรุปยอดรวม --- */}
+        {/* --- Modal ป๊อปอัพหน้าสรุปยอดรวม (ดึงรูปสลิปมาโชว์ด้วย) --- */}
         {summaryPopupInfo && (
           <div className="fixed inset-0 z-[150] bg-black/80 backdrop-blur-md flex items-center justify-center p-4" onClick={() => setSummaryPopupInfo(null)}>
             <div className="bg-[#24293f] border border-[#3b4363] rounded-[2rem] p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
@@ -306,9 +356,9 @@ export default function App() {
                 <h3 className="text-white font-black text-lg flex items-center gap-2"><BarChart2 className="text-blue-400" /> {summaryPopupInfo.title}</h3>
                 <button onClick={() => setSummaryPopupInfo(null)} className="p-2 text-slate-400 bg-[#1c2135] rounded-full"><X size={18}/></button>
               </div>
-              <div className="max-h-[60vh] overflow-y-auto pr-1">
+              <div className="max-h-[60vh] overflow-y-auto pr-1 custom-scrollbar space-y-4">
                 {summaryPopupInfo.records.map((r, i) => (
-                  <div key={i} className="bg-[#1c2135] p-4 rounded-2xl border border-[#3b4363] mb-3 last:mb-0">
+                  <div key={i} className="bg-[#1c2135] p-4 rounded-2xl border border-[#3b4363]">
                     <div className="flex justify-between items-center border-b border-[#3b4363] pb-2 mb-3">
                       <div className="font-bold text-blue-400">พนักงาน: <span className="text-white">{r.cashierName}</span></div>
                       <div className="text-xs text-slate-500">{r.time}</div>
@@ -338,6 +388,25 @@ export default function App() {
                       {(Number(r.overAmount) > 0) && <div className="flex justify-between text-amber-400"><span>เงินเกิน:</span> <span>+{formatNum(r.overAmount)} ฿</span></div>}
                       {(Number(r.shortAmount) > 0) && <div className="flex justify-between text-rose-400"><span>เงินขาด:</span> <span>-{formatNum(r.shortAmount)} ฿</span></div>}
                     </div>
+
+                    {/* แสดงรูปสลิปในป๊อปอัพ */}
+                    {(r.transferSlipImage || r.expenseSlipImage) && (
+                      <div className="flex gap-2 mt-3 pt-3 border-t border-[#3b4363]">
+                        {r.transferSlipImage && (
+                          <div className="w-14 h-14 rounded-lg overflow-hidden border border-[#374160] cursor-pointer" onClick={() => setPreviewImage(r.transferSlipImage)}>
+                            <img src={r.transferSlipImage} className="w-full h-full object-cover" />
+                            <div className="text-center text-[8px] bg-[#1c2135] text-slate-400">สลิปโอน</div>
+                          </div>
+                        )}
+                        {r.expenseSlipImage && (
+                          <div className="w-14 h-14 rounded-lg overflow-hidden border border-[#374160] cursor-pointer" onClick={() => setPreviewImage(r.expenseSlipImage)}>
+                            <img src={r.expenseSlipImage} className="w-full h-full object-cover" />
+                            <div className="text-center text-[8px] bg-[#1c2135] text-slate-400">บิลจ่าย</div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     {r.notes && <div className="mt-3 p-2 bg-[#2d334d] rounded-lg text-[10px] text-slate-400 border border-[#3b4363]">หมายเหตุ: {r.notes}</div>}
                   </div>
                 ))}
@@ -347,10 +416,20 @@ export default function App() {
           </div>
         )}
 
-        {/* --- Dialog ยืนยัน (รองรับรหัสผ่าน) --- */}
+        {/* --- Modal ขยายดูรูปบิลเต็มจอ --- */}
+        {previewImage && (
+          <div className="fixed inset-0 z-[400] bg-black/95 backdrop-blur-sm flex flex-col items-center justify-center p-4 animate-in zoom-in-95">
+             <button onClick={() => setPreviewImage(null)} className="absolute top-6 right-6 text-white/50 hover:text-white bg-slate-800/50 p-2 rounded-full">
+                <X size={24} />
+             </button>
+             <img src={previewImage} className="max-w-full max-h-[85vh] object-contain rounded-xl shadow-2xl border border-slate-700" />
+          </div>
+        )}
+
+        {/* --- Dialog ยืนยันรหัสผ่านก่อนลบ --- */}
         {confirmDialog.show && (
           <div className="absolute inset-0 z-[200] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-[#24293f] border border-[#3b4363] rounded-[2rem] p-6 w-full max-w-sm shadow-2xl text-center">
+            <div className="bg-[#24293f] border border-[#3b4363] rounded-2xl p-6 w-full max-w-sm shadow-2xl text-center">
               <AlertTriangle size={48} className="text-red-400 mx-auto mb-4" />
               <h3 className="text-white font-bold text-lg mb-2">ยืนยันการดำเนินการ</h3>
               <p className="text-slate-400 text-sm mb-6 leading-relaxed whitespace-pre-line">{confirmDialog.message}</p>
@@ -421,7 +500,6 @@ export default function App() {
               {branchTab === 'form' ? (
                 <div className="bg-[#24293f] p-5 rounded-[20px] border border-[#374160] shadow-xl">
                   
-                  {/* ฟิลด์เลือกวันที่ (สำหรับพนักงานที่ปิดกะข้ามวัน) */}
                   <div className="mb-5 bg-[#1c2135] p-3 rounded-xl border border-blue-500/30">
                     <label className={labelStyle}>📅 วันที่ประจำกะ (เปลี่ยนได้ถ้าปิดกะข้ามวัน)</label>
                     <input 
@@ -437,21 +515,38 @@ export default function App() {
                     <div><label className={labelStyle}>กะ</label><select value={formData.shift} onChange={(e) => setFormData({...formData, shift: e.target.value})} className={inputStyle}><option>เช้า</option><option>บ่าย</option><option>ดึก</option></select></div>
                     <div><label className={labelStyle}>เงินทอนเริ่มกะ</label><input type="number" value={formData.floatIn} onChange={(e) => setFormData({...formData, floatIn: e.target.value})} className={inputStyle} placeholder="0" /></div>
                   </div>
+                  
                   <div className="bg-[#1c2135] p-4 rounded-xl border border-[#3b4363] mb-4">
-                    <h3 className="text-white text-sm font-bold mb-3 flex items-center"><Wallet size={16} className="mr-2 text-yellow-400"/> สรุปยอดเงิน (บาท)</h3>
+                    <h3 className="text-white text-sm font-bold mb-3 flex items-center"><Wallet size={16} className="mr-2 text-emerald-400"/> ระบบเงินสด</h3>
                     <div className="space-y-3">
-                      <div><label className={labelStyle}>เงินสดนับได้จริง</label><input type="number" value={formData.actualCash} onChange={(e) => setFormData({...formData, actualCash: e.target.value})} className={`${inputStyle} border-blue-500/50 bg-blue-900/10 text-blue-300 font-bold text-lg`} placeholder="0" /></div>
+                      <div><label className={labelStyle}>เงินสดนับได้จริง</label><input type="number" value={formData.actualCash} onChange={(e) => setFormData({...formData, actualCash: e.target.value})} className={`${inputStyle} border-emerald-500/50 bg-emerald-900/10 text-emerald-300 font-bold text-lg`} placeholder="0" /></div>
                       <div className="grid grid-cols-2 gap-3">
-                        <div><label className={labelStyle}>ทอนกะใหม่</label><input type="number" value={formData.nextFloat} onChange={(e) => setFormData({...formData, nextFloat: e.target.value})} className={inputStyle} placeholder="0" /></div>
-                        <div><label className={labelStyle}>ยอดเงินโอน</label><input type="number" value={formData.transferAmount} onChange={(e) => setFormData({...formData, transferAmount: e.target.value})} className={inputStyle} placeholder="0" /></div>
+                        <div><label className={labelStyle}>หักทอนกะใหม่</label><input type="number" value={formData.nextFloat} onChange={(e) => setFormData({...formData, nextFloat: e.target.value})} className={inputStyle} placeholder="0" /></div>
+                        <div>
+                           <label className={labelStyle}>ยอดเงินโอน</label>
+                           <input type="number" value={formData.transferAmount} onChange={(e) => setFormData({...formData, transferAmount: e.target.value})} className={inputStyle} placeholder="0" />
+                           <label className="flex flex-col items-center justify-center w-full h-16 border-2 border-dashed border-[#3b4363] rounded-lg cursor-pointer hover:bg-[#2d334d] bg-[#1c2135] overflow-hidden relative mt-2">
+                             {formData.transferSlipImage ? <img src={formData.transferSlipImage} className="w-full h-full object-cover opacity-60" /> : <div className="text-slate-500 text-[10px] font-bold"><ImageIcon size={16} className="mx-auto mb-1 opacity-50"/>แนบสลิปโอน</div>}
+                             <input type="file" className="hidden" accept="image/*" onChange={e => handleImageUpload(e, 'transferSlipImage')} />
+                           </label>
+                        </div>
                       </div>
                     </div>
                   </div>
+
                   <div className="bg-[#1c2135] p-4 rounded-xl border border-[#3b4363] mb-4">
                     <label className={labelStyle}>รายจ่ายในกะ</label>
-                    <div className="flex gap-2 mb-3">
-                      <select value={formData.expenseType} onChange={(e) => setFormData({...formData, expenseType: e.target.value})} className={`${inputStyle} w-1/2`}><option>ค่าของในร้าน</option><option>เบิกค่าแรง</option><option>อื่นๆ</option></select>
-                      <input type="number" value={formData.expenseAmount} onChange={(e) => setFormData({...formData, expenseAmount: e.target.value})} className={`${inputStyle} w-1/2 text-red-400`} placeholder="0" />
+                    <div className="grid grid-cols-2 gap-3 mb-3">
+                      <div>
+                        <select value={formData.expenseType} onChange={(e) => setFormData({...formData, expenseType: e.target.value})} className={inputStyle}><option>ค่าของในร้าน</option><option>เบิกค่าแรง</option><option>อื่นๆ</option></select>
+                      </div>
+                      <div>
+                         <input type="number" value={formData.expenseAmount} onChange={(e) => setFormData({...formData, expenseAmount: e.target.value})} className={`${inputStyle} text-red-400`} placeholder="0" />
+                         <label className="flex flex-col items-center justify-center w-full h-16 border-2 border-dashed border-[#3b4363] rounded-lg cursor-pointer hover:bg-[#2d334d] bg-[#1c2135] overflow-hidden relative mt-2">
+                             {formData.expenseSlipImage ? <img src={formData.expenseSlipImage} className="w-full h-full object-cover opacity-60" /> : <div className="text-slate-500 text-[10px] font-bold"><ImageIcon size={16} className="mx-auto mb-1 opacity-50"/>แนบบิลรายจ่าย</div>}
+                             <input type="file" className="hidden" accept="image/*" onChange={e => handleImageUpload(e, 'expenseSlipImage')} />
+                         </label>
+                      </div>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div><label className={labelStyle}>ยอดเงินเกิน</label><input type="number" value={formData.overAmount} onChange={(e) => setFormData({...formData, overAmount: e.target.value})} className={`${inputStyle} text-yellow-400`} placeholder="0" /></div>
@@ -502,6 +597,25 @@ export default function App() {
                               <div><span className="text-slate-500">พนักงาน:</span> {data.cashierName}</div><div><span className="text-slate-500">กะ:</span> {data.shift}</div>
                               <div className="col-span-2 truncate"><span className="text-slate-500">หมายเหตุ:</span> {data.notes || '-'}</div>
                             </div>
+
+                            {/* แสดงรูปสลิปในหน้าประวัติกะ */}
+                            {(data.transferSlipImage || data.expenseSlipImage) && (
+                              <div className="flex gap-2 mt-3 pt-3 border-t border-[#3b4363]">
+                                {data.transferSlipImage && (
+                                  <div className="w-14 h-14 rounded-lg overflow-hidden border border-[#374160] cursor-pointer" onClick={() => setPreviewImage(data.transferSlipImage)}>
+                                    <img src={data.transferSlipImage} className="w-full h-full object-cover opacity-80 hover:opacity-100" />
+                                    <div className="text-center text-[8px] bg-[#1c2135] text-slate-400">สลิปโอน</div>
+                                  </div>
+                                )}
+                                {data.expenseSlipImage && (
+                                  <div className="w-14 h-14 rounded-lg overflow-hidden border border-[#374160] cursor-pointer" onClick={() => setPreviewImage(data.expenseSlipImage)}>
+                                    <img src={data.expenseSlipImage} className="w-full h-full object-cover opacity-80 hover:opacity-100" />
+                                    <div className="text-center text-[8px] bg-[#1c2135] text-slate-400">บิลจ่าย</div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
                          </div>
                       ))}
                       {historyData.filter(d => d.branch === activeBranch).length === 0 && (
@@ -542,7 +656,6 @@ export default function App() {
                         </select>
                       </div>
                       
-                      {/* เปลี่ยนเป็นปุ่มลบเฉพาะวันที่เลือก ถ้าเลือก all จะกดแล้วแจ้งเตือน */}
                       <button onClick={handleDeleteSpecificHistory} className="p-3 bg-red-500/10 text-red-500 rounded-xl border border-red-500/20 active:scale-95 transition shadow-lg">
                         <Trash2 size={18}/>
                       </button>
