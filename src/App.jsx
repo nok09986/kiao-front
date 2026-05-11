@@ -76,6 +76,9 @@ export default function App() {
   const [pin, setPin] = useState('');
   const ADMIN_PIN = '5930'; 
 
+  // 🌟 เพิ่ม State ไว้จำว่าเพิ่งบันทึกกะไหนไป (เพื่อแสดงเฉพาะกะนั้น)
+  const [staffViewShiftId, setStaffViewShiftId] = useState(null);
+
   const [summaryDate, setSummaryDate] = useState('all');
   const [confirmDialog, setConfirmDialog] = useState({ show: false, message: '', onConfirm: null, requirePin: false });
   const [confirmPin, setConfirmPin] = useState('');
@@ -118,7 +121,10 @@ export default function App() {
   const handleLogin = (type) => {
     if (pin === ADMIN_PIN) {
       if (type === 'summary') setIsUnlocked(true);
-      if (type === 'history') setIsHistoryUnlocked(true);
+      if (type === 'history') {
+        setIsHistoryUnlocked(true);
+        setStaffViewShiftId(null); // พิมพ์รหัสผ่าน = ปลดล็อคดูทั้งหมด
+      }
       setPin('');
     } else {
       showToast('รหัสผ่านไม่ถูกต้อง!', 'error');
@@ -244,11 +250,15 @@ export default function App() {
     try {
       await setDoc(doc(db, 'artifacts', 'kiao-shop-pos', 'public', 'data', 'kiao_shift_records', docId), newRecord);
       showToast(`บันทึกเรียบร้อย`, 'success');
+      
       setFormData({ 
         recordDate: getTodayIso(), 
         shift: 'เช้า', cashierName: '', floatIn: '', actualCash: '', transferAmount: '', transferSlipImage: null,
         expenses: [], nextFloat: '', overAmount: '', shortAmount: '', notes: '' 
       });
+      
+      // 🌟 พอบันทึกเสร็จ ให้โชว์แค่กะนี้เท่านั้น
+      setStaffViewShiftId(docId);
       setIsHistoryUnlocked(true);
       setBranchTab('history');
     } catch (err) { showToast('บันทึกไม่สำเร็จ', 'error'); }
@@ -367,6 +377,7 @@ export default function App() {
     setBranchTab('form');
     setCurrentView('branch');
     setIsHistoryUnlocked(false); 
+    setStaffViewShiftId(null); // รีเซ็ตการจำกะล่าสุดเมื่อเข้าสาขาใหม่
     setPin('');
   };
 
@@ -382,6 +393,13 @@ export default function App() {
 
   const inputStyle = "w-full bg-[#1c2135] border border-[#3b4363] rounded-lg p-3 text-white focus:outline-none focus:border-[#60a5fa] transition text-sm";
   const labelStyle = "block text-[#94a3b8] text-xs font-medium mb-1.5";
+
+  // 🌟 ฟิลเตอร์การแสดงผลประวัติในสาขา
+  let branchDisplayHistory = historyData.filter(d => d.branch === activeBranch);
+  // ถ้าน้องเพิ่งบันทึกเสร็จ จะโชว์แค่กะเดียว
+  if (staffViewShiftId) {
+    branchDisplayHistory = branchDisplayHistory.filter(d => d.id === staffViewShiftId);
+  }
 
   return (
     <div className="min-h-screen bg-[#111526] font-sans flex justify-center">
@@ -595,13 +613,13 @@ export default function App() {
         {currentView === 'branch' && (
           <div className="flex flex-col h-full">
             <div className="bg-[#1e2336] p-4 flex items-center border-b border-[#2d334d] sticky top-0 z-10">
-              <button onClick={() => { setCurrentView('menu'); setIsHistoryUnlocked(false); setPin(''); }} className="p-2 bg-[#24293f] rounded-xl text-white mr-4 border border-[#374160]"><ChevronLeft size={20} /></button>
+              <button onClick={() => { setCurrentView('menu'); setIsHistoryUnlocked(false); setStaffViewShiftId(null); setPin(''); }} className="p-2 bg-[#24293f] rounded-xl text-white mr-4 border border-[#374160]"><ChevronLeft size={20} /></button>
               <h2 className="text-lg font-bold text-white flex items-center"><MapPin size={16} className="text-[#60a5fa] mr-2"/> {activeBranch}</h2>
             </div>
             <div className="flex p-4 space-x-3 bg-[#161a2b]">
               <button onClick={() => setBranchTab('form')} className={`flex-1 py-3 rounded-xl text-sm font-bold flex justify-center items-center transition ${branchTab === 'form' ? 'bg-[#2563eb] text-white shadow-lg' : 'bg-[#24293f] text-slate-400 border border-[#374160]'}`}><FileText size={16} className="mr-2"/> ลงข้อมูล</button>
               <button onClick={() => setBranchTab('history')} className={`flex-1 py-3 rounded-xl text-sm font-bold flex justify-center items-center transition ${branchTab === 'history' ? 'bg-[#2563eb] text-white shadow-lg' : 'bg-[#24293f] text-slate-400 border border-[#374160]'}`}>
-                {isHistoryUnlocked ? <Search size={16} className="mr-2"/> : <Lock size={16} className="mr-2"/>} ประวัติกะ
+                {(isHistoryUnlocked || staffViewShiftId) ? <Search size={16} className="mr-2"/> : <Lock size={16} className="mr-2"/>} ประวัติกะ
               </button>
             </div>
 
@@ -637,7 +655,6 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* 🌟 ฟอร์มใหม่: ระบบรายจ่ายแบบปรับปรุงหมวดหมู่ตามบอสสั่ง */}
                   <div className="bg-[#1c2135] p-4 rounded-xl border border-[#3b4363] mb-4">
                      <div className="flex justify-between items-center mb-3">
                         <label className={labelStyle + " !mb-0"}>รายการจ่ายเงินในกะ</label>
@@ -649,7 +666,7 @@ export default function App() {
                      <div className="space-y-3">
                         {formData.expenses.map((exp, idx) => (
                            <div key={exp.id} className="bg-[#24293f] p-3 rounded-lg border border-[#3b4363] relative animate-in fade-in">
-                              <button onClick={() => removeExpense(idx)} className="absolute -top-2 -right-2 text-white bg-red-500 rounded-full p-1 shadow-md"><X size={12}/></button>
+                              <button onClick={() => removeExpense(idx)} className="absolute -top-2 -right-2 text-white bg-red-500 rounded-full p-1 shadow-md hover:bg-red-600 transition-colors"><X size={12}/></button>
                               <div className="grid grid-cols-2 gap-2 mb-2">
                                  <select className={inputStyle + " !p-2 !text-xs"} value={exp.type} onChange={e => updateExpense(idx, 'type', e.target.value)}>
                                    {EXPENSE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
@@ -686,7 +703,7 @@ export default function App() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {!isHistoryUnlocked ? (
+                  {(!isHistoryUnlocked && !staffViewShiftId) ? (
                     <div className="bg-[#24293f] p-8 rounded-[20px] border border-[#374160] shadow-2xl text-center mt-4">
                       <div className="w-16 h-16 bg-[#1c2135] rounded-full flex items-center justify-center mx-auto mb-4 border border-[#3b4363]"><Lock size={30} className="text-[#64748b]" /></div>
                       <h2 className="text-lg font-bold text-white mb-6">รหัสผ่านสำหรับดูประวัติ</h2>
@@ -695,7 +712,17 @@ export default function App() {
                     </div>
                   ) : (
                     <>
-                      {historyData.filter(d => d.branch === activeBranch).map((data, index) => {
+                      {/* 🌟 ถ้าเป็นโหมดแสดงเฉพาะกะที่เพิ่งบันทึก ให้โชว์แถบแจ้งเตือนและปุ่มดูทั้งหมด */}
+                      {staffViewShiftId && (
+                         <div className="mb-4 bg-[#1c2135] p-3 rounded-xl border border-emerald-500/30 shadow-lg flex justify-between items-center">
+                            <span className="text-emerald-400 text-[11px] font-bold flex items-center gap-1"><CheckCircle size={14}/> รายการกะปัจจุบัน</span>
+                            <button onClick={() => { setIsHistoryUnlocked(false); setStaffViewShiftId(null); setPin(''); }} className="text-[10px] bg-blue-600 px-3 py-1.5 rounded-lg text-white font-bold shadow-md active:scale-95 transition">
+                               ดูทั้งหมด (ใส่รหัส)
+                            </button>
+                         </div>
+                      )}
+
+                      {branchDisplayHistory.map((data, index) => {
                          const expList = data.expenses && data.expenses.length > 0 ? data.expenses : 
                                          (Number(data.expenseAmount) > 0 ? [{ id: 1, type: data.expenseType, amount: data.expenseAmount, image: data.expenseSlipImage }] : []);
                          return (
@@ -738,7 +765,7 @@ export default function App() {
                             )}
                          </div>
                       )})}
-                      {historyData.filter(d => d.branch === activeBranch).length === 0 && (
+                      {branchDisplayHistory.length === 0 && (
                         <div className="text-center py-20 text-[#94a3b8] text-sm"><Search size={30} className="mx-auto mb-2 opacity-50"/> ไม่มีประวัติกะ</div>
                       )}
                     </>
