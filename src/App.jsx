@@ -69,12 +69,10 @@ const getLocalYMD = (timestamp) => {
 const IconBanknote = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="20" height="12" rx="2" ry="2"></rect><circle cx="12" cy="12" r="2"></circle><path d="M6 12h.01M18 12h.01"></path></svg>;
 const IconPieChart = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>;
 
-
 // ============================================================================
 // 💸 SYSTEM 2: ระบบส่งยอดโอน 
 // ============================================================================
 function TransferApp({ onBack }) {
-  // ✅ แก้ไข: เหลือแค่สาขา 2, 3, 5
   const TRANSFER_BRANCHES = [2, 3, 5]; 
   const [activeTab, setActiveTab] = useState('form');
   const [selectedBranch, setSelectedBranch] = useState(null);
@@ -86,7 +84,6 @@ function TransferApp({ onBack }) {
   const [editSession, setEditSession] = useState(null);
   const [previewImage, setPreviewImage] = useState(null);
   
-  // 🗑️ State ลบข้อมูล
   const [deletingId, setDeletingId] = useState(null);
   const [deletePin, setDeletePin] = useState('');
   const [isClearingAll, setIsClearingAll] = useState(false);
@@ -94,7 +91,6 @@ function TransferApp({ onBack }) {
 
   const [filterDate, setFilterDate] = useState(getTodayIso());
 
-  // 🔒 State สำหรับปลดล็อกดูยอดโอน (สรุปยอด)
   const [isOwnerUnlocked, setIsOwnerUnlocked] = useState(false);
   const [ownerPin, setOwnerPin] = useState('');
 
@@ -149,14 +145,12 @@ function TransferApp({ onBack }) {
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
 
-  // ✅ ระบบลบ 1 สลิป (รหัส 0202)
   const handleDelete = async () => { 
     if (deletePin !== '0202') return alert("รหัสผ่านไม่ถูกต้อง! ไม่อนุญาตให้ลบข้อมูลค่ะ");
     try { await deleteDoc(doc(db, 'transfer_reports', deletingId)); } catch (e) {} 
     setDeletingId(null); setDeletePin('');
   };
 
-  // ✅ ระบบล้างประวัติทั้งหมด (รหัส 0202)
   const handleClearAll = async () => {
     if (clearAllPin !== '0202') return alert("รหัสผ่านไม่ถูกต้อง!");
     const branchRecords = historyList.filter(r => r && r.branch === selectedBranch);
@@ -181,29 +175,35 @@ function TransferApp({ onBack }) {
       return r.branch === selectedBranch && (r.submitDate === filterDate || (!r.submitDate && getLocalYMD(r.createdAt) === filterDate));
   });
 
-  // ตัวแปรสำหรับหน้า Dashboard (คำนวณยอดรวมทุกสาขาในวันที่เลือก)
+  // ตัวแปรสำหรับหน้า Dashboard (คำนวณยอดรวมทุกสาขา และแยกสาขา/แยกกะ)
   const filteredAllBranches = historyList.filter(r => {
       if (!r) return false;
       return r.submitDate === filterDate || (!r.submitDate && getLocalYMD(r.createdAt) === filterDate);
   });
   
-  const totalTransferredAll = filteredAllBranches.reduce((sum, r) => sum + (parseFloat(r?.transfer) || 0), 0);
+  let totalTransferredAll = 0;
+  const branchSummaryDetail = {};
   
-  // จัดกลุ่มยอดเงินแยกตามกะ และแยกรหัสสาขาย่อยด้านใน
-  const shiftSummaryDetail = {};
-  SHIFTS.forEach(s => { 
-      shiftSummaryDetail[s] = { total: 0, branches: {} }; 
-      TRANSFER_BRANCHES.forEach(b => shiftSummaryDetail[s].branches[b] = 0); 
+  // เตรียมโครงสร้างข้อมูลเริ่มต้น
+  TRANSFER_BRANCHES.forEach(b => {
+      branchSummaryDetail[b] = { 
+          total: 0, 
+          shifts: { "เช้า": 0, "บ่าย": 0, "ดึก": 0 } 
+      };
   });
-  
+
+  // คำนวณยอด
   filteredAllBranches.forEach(r => {
-      const s = r?.shift || 'เช้า';
-      const b = parseInt(r?.branch);
       const amt = parseFloat(r?.transfer) || 0;
-      if (shiftSummaryDetail[s]) {
-          shiftSummaryDetail[s].total += amt;
-          if (!isNaN(b) && shiftSummaryDetail[s].branches[b] !== undefined) {
-              shiftSummaryDetail[s].branches[b] += amt;
+      const b = parseInt(r?.branch);
+      const s = r?.shift || 'เช้า';
+      
+      totalTransferredAll += amt;
+      
+      if (branchSummaryDetail[b]) {
+          branchSummaryDetail[b].total += amt;
+          if (branchSummaryDetail[b].shifts[s] !== undefined) {
+              branchSummaryDetail[b].shifts[s] += amt;
           }
       }
   });
@@ -255,45 +255,48 @@ function TransferApp({ onBack }) {
           </div>
         )}
 
+        {/* ✅ Dashboard แบบใหม่: รวมทุกสาขา -> โชว์ทีละสาขา -> แยกกะในสาขา */}
         {activeTab === 'dashboard' && isOwnerUnlocked && (
           <div className="space-y-4 animate-in fade-in">
              <div className="bg-[#1e2336] p-4 rounded-2xl shadow-sm border border-[#3b4363] flex gap-3">
                  <div className="flex-1"><label className="text-[10px] font-bold text-slate-400 block mb-1">📅 เลือกวันที่ดูยอดรวม</label><input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} className="w-full p-2 bg-[#24293f] border border-[#3b4363] text-white rounded-lg text-sm font-bold outline-none" /></div>
              </div>
 
+             {/* บล็อกยอดรวมสุทธิทุกสาขา */}
              <div className="bg-gradient-to-r from-blue-600/20 to-indigo-700/20 border border-blue-500/30 text-white p-6 rounded-3xl shadow-lg text-center relative overflow-hidden">
                 <div className="absolute -right-4 -top-4 opacity-10 transform scale-150"><IconPieChart /></div>
                 <h2 className="text-sm font-bold opacity-90 mb-1 text-blue-400">ยอดโอนรวมทุกสาขา</h2>
                 <div className="text-[10px] text-slate-400 mb-3">(ยอดประจำวันที่ {filterDate})</div>
-                <div className="text-4xl font-black tracking-tight">{!isNaN(totalTransferredAll) ? totalTransferredAll.toLocaleString() : '0'} <span className="text-lg">฿</span></div>
+                <div className="text-4xl font-black tracking-tight">{totalTransferredAll.toLocaleString()} <span className="text-lg">฿</span></div>
              </div>
              
-             {/* ส่วนแสดงผลแบบใหม่: แยกกะ และบอกรายละเอียดยอดแต่ละสาขา */}
-             <div className="space-y-3 mt-4">
-                {SHIFTS.map(shiftName => {
-                   if (shiftSummaryDetail[shiftName].total === 0) return null;
+             {/* บล็อกยอดรวมรายสาขา พร้อมแยกกะ */}
+             <div className="space-y-4 mt-4">
+                {TRANSFER_BRANCHES.map(branch => {
+                   const bData = branchSummaryDetail[branch];
+                   // ซ่อนสาขาที่ยอดเป็น 0 (ถ้าอยากให้โชว์ตลอด เอาบรรทัดล่างออกได้ครับ)
+                   if (bData.total === 0) return null;
+                   
                    return (
-                      <div key={shiftName} className="bg-[#1e2336] rounded-3xl p-5 shadow-sm border border-[#3b4363] overflow-hidden relative">
+                      <div key={branch} className="bg-[#1e2336] rounded-3xl p-5 shadow-sm border border-[#3b4363] relative animate-in zoom-in-95 duration-300">
                          <div className="flex justify-between items-end mb-3 border-b border-[#3b4363] pb-3">
-                            <h3 className="font-black text-white text-lg flex items-center gap-2">
-                               {shiftName === 'เช้า' ? '☀️' : shiftName === 'บ่าย' ? '🌤️' : '🌙'} กะ{shiftName}
+                            <h3 className="font-black text-amber-400 text-lg flex items-center gap-2">
+                               <Store size={20} /> สาขา {branch}
                             </h3>
                             <div className="text-right">
-                               <div className="text-[10px] text-slate-400 font-bold mb-0.5">ยอดรวมกะ{shiftName}</div>
-                               <div className="text-xl font-black text-blue-400">{shiftSummaryDetail[shiftName].total.toLocaleString()} ฿</div>
+                               <div className="text-[10px] text-slate-400 font-bold mb-0.5">ยอดรวมสาขานี้</div>
+                               <div className="text-xl font-black text-white">{bData.total.toLocaleString()} ฿</div>
                             </div>
                          </div>
-                         <div className="space-y-2">
-                            {TRANSFER_BRANCHES.map(branch => {
-                               const amt = shiftSummaryDetail[shiftName].branches[branch];
-                               if (amt === 0) return null;
-                               return (
-                                  <div key={branch} className="flex justify-between items-center bg-[#24293f] p-2.5 rounded-xl border border-[#3b4363]">
-                                     <div className="text-xs font-bold text-slate-300">สาขา {branch}</div>
-                                     <div className="text-sm font-black text-white">{amt.toLocaleString()} ฿</div>
+                         <div className="grid grid-cols-3 gap-2">
+                            {SHIFTS.map(s => (
+                               <div key={s} className="bg-[#24293f] p-3 rounded-xl border border-[#3b4363] text-center flex flex-col justify-center">
+                                  <div className="text-[10px] font-bold text-slate-400 mb-1">กะ{s}</div>
+                                  <div className={`text-sm font-black ${bData.shifts[s] > 0 ? 'text-blue-400' : 'text-slate-600'}`}>
+                                     {bData.shifts[s].toLocaleString()}
                                   </div>
-                               );
-                            })}
+                               </div>
+                            ))}
                          </div>
                       </div>
                    );
@@ -305,7 +308,7 @@ function TransferApp({ onBack }) {
           </div>
         )}
 
-        {/* ✅ แก้ไข: หน้าประวัติไม่ต้องใส่รหัสผ่านแล้ว ดูได้เลย */}
+        {/* หน้าประวัติ (เปิดดูได้เลยไม่ต้องใส่รหัส) */}
         {activeTab === 'history' && (
           <div className="space-y-4 animate-in fade-in">
              <div className="bg-[#1e2336] p-4 rounded-2xl shadow-sm border border-[#3b4363] flex gap-3">
