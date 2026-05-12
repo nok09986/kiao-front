@@ -71,7 +71,7 @@ const IconPieChart = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" he
 
 
 // ============================================================================
-// 💸 SYSTEM 2: ระบบส่งยอดโอน (มีรหัส 1313 ป้องกันหน้าสรุปยอด)
+// 💸 SYSTEM 2: ระบบส่งยอดโอน
 // ============================================================================
 function TransferApp({ onBack }) {
   const TRANSFER_BRANCHES = [1, 2, 3, 4, 5]; 
@@ -84,11 +84,14 @@ function TransferApp({ onBack }) {
   const [submitDate, setSubmitDate] = useState(getTodayIso());
   const [editSession, setEditSession] = useState(null);
   const [previewImage, setPreviewImage] = useState(null);
+  
+  // 🗑️ State ลบข้อมูล
   const [deletingId, setDeletingId] = useState(null);
-
-  const [filterDate, setFilterDate] = useState(getTodayIso());
+  const [deletePin, setDeletePin] = useState('');
   const [isClearingAll, setIsClearingAll] = useState(false);
   const [clearAllPin, setClearAllPin] = useState('');
+
+  const [filterDate, setFilterDate] = useState(getTodayIso());
 
   // 🔒 State สำหรับปลดล็อกดูยอดโอน
   const [isOwnerUnlocked, setIsOwnerUnlocked] = useState(false);
@@ -145,10 +148,16 @@ function TransferApp({ onBack }) {
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
 
-  const handleDelete = async () => { try { await deleteDoc(doc(db, 'transfer_reports', deletingId)); } catch (e) {} setDeletingId(null); };
+  // ✅ ระบบลบ 1 สลิป (รหัส 0202)
+  const handleDelete = async () => { 
+    if (deletePin !== '0202') return alert("รหัสผ่านไม่ถูกต้อง! ไม่อนุญาตให้ลบข้อมูลค่ะ");
+    try { await deleteDoc(doc(db, 'transfer_reports', deletingId)); } catch (e) {} 
+    setDeletingId(null); setDeletePin('');
+  };
 
+  // ✅ ระบบล้างประวัติทั้งหมด (รหัส 0202)
   const handleClearAll = async () => {
-    if (clearAllPin !== '1313') return alert("รหัสผ่านไม่ถูกต้อง!");
+    if (clearAllPin !== '0202') return alert("รหัสผ่านไม่ถูกต้อง!");
     const branchRecords = historyList.filter(r => r && r.branch === selectedBranch);
     if (branchRecords.length === 0) return alert("ไม่มีข้อมูลให้ลบค่ะ");
     if (!window.confirm(`ยืนยันลบประวัติยอดโอนทั้งหมดของสาขา ${selectedBranch} จำนวน ${branchRecords.length} รายการ?`)) return;
@@ -209,14 +218,15 @@ function TransferApp({ onBack }) {
           </form>
         )}
         
-        {/* หน้าแดชบอร์ดสรุปยอดรวม (ต้องใส่รหัส 1313 ก่อนดู) */}
+        {/* หน้าแดชบอร์ดสรุปยอดรวม */}
         {activeTab === 'dashboard' && !isOwnerUnlocked && (
           <div className="bg-[#1e2336] p-8 rounded-3xl shadow-sm border border-[#3b4363] text-center animate-in zoom-in-95">
              <div className="w-16 h-16 bg-[#24293f] border border-[#3b4363] rounded-full flex items-center justify-center mx-auto mb-4"><Lock size={30} className="text-amber-400" /></div>
              <h3 className="font-black text-xl text-white mb-2">โซนเถ้าแก่</h3>
              <p className="text-xs text-slate-400 mb-6 font-bold">กรุณาใส่รหัสผ่านเพื่อดูสรุปยอดโอน</p>
              <input type="password" value={ownerPin} onChange={e => setOwnerPin(e.target.value)} className="w-full p-4 bg-[#1c2135] border border-[#3b4363] text-white rounded-xl text-center text-2xl font-black tracking-[0.5em] outline-none mb-4 focus:border-amber-400 transition-all font-mono" placeholder="****" autoFocus />
-             <button onClick={() => { if(ownerPin === '1313') { setIsOwnerUnlocked(true); setOwnerPin(''); } else { alert('รหัสผ่านไม่ถูกต้อง ❌'); setOwnerPin(''); } }} className="w-full p-4 bg-amber-500 hover:bg-amber-600 text-white rounded-2xl font-black shadow-lg text-lg transition-all flex justify-center items-center"><Unlock size={18} className="mr-2" /> ปลดล็อกดูยอด</button>
+             {/* ✅ เปลี่ยนรหัสดูยอดเป็น 6969 */}
+             <button onClick={() => { if(ownerPin === '6969') { setIsOwnerUnlocked(true); setOwnerPin(''); } else { alert('รหัสผ่านไม่ถูกต้อง ❌'); setOwnerPin(''); } }} className="w-full p-4 bg-amber-500 hover:bg-amber-600 text-white rounded-2xl font-black shadow-lg text-lg transition-all flex justify-center items-center"><Unlock size={18} className="mr-2" /> ปลดล็อกดูยอด</button>
           </div>
         )}
 
@@ -242,14 +252,15 @@ function TransferApp({ onBack }) {
           </div>
         )}
 
-        {/* หน้าประวัติ (ต้องใส่รหัส 1313 ก่อนดู) */}
+        {/* หน้าประวัติ */}
         {activeTab === 'history' && !isOwnerUnlocked && (
           <div className="bg-[#1e2336] p-8 rounded-3xl shadow-sm border border-[#3b4363] text-center animate-in zoom-in-95">
              <div className="w-16 h-16 bg-[#24293f] border border-[#3b4363] rounded-full flex items-center justify-center mx-auto mb-4"><Lock size={30} className="text-amber-400" /></div>
              <h3 className="font-black text-xl text-white mb-2">โซนเถ้าแก่</h3>
              <p className="text-xs text-slate-400 mb-6 font-bold">กรุณาใส่รหัสผ่านเพื่อดูประวัติโอน</p>
              <input type="password" value={ownerPin} onChange={e => setOwnerPin(e.target.value)} className="w-full p-4 bg-[#1c2135] border border-[#3b4363] text-white rounded-xl text-center text-2xl font-black tracking-[0.5em] outline-none mb-4 focus:border-amber-400 transition-all font-mono" placeholder="****" autoFocus />
-             <button onClick={() => { if(ownerPin === '1313') { setIsOwnerUnlocked(true); setOwnerPin(''); } else { alert('รหัสผ่านไม่ถูกต้อง ❌'); setOwnerPin(''); } }} className="w-full p-4 bg-amber-500 hover:bg-amber-600 text-white rounded-2xl font-black shadow-lg text-lg transition-all flex justify-center items-center"><Unlock size={18} className="mr-2" /> ปลดล็อกดูประวัติ</button>
+             {/* ✅ เปลี่ยนรหัสดูประวัติเป็น 6969 */}
+             <button onClick={() => { if(ownerPin === '6969') { setIsOwnerUnlocked(true); setOwnerPin(''); } else { alert('รหัสผ่านไม่ถูกต้อง ❌'); setOwnerPin(''); } }} className="w-full p-4 bg-amber-500 hover:bg-amber-600 text-white rounded-2xl font-black shadow-lg text-lg transition-all flex justify-center items-center"><Unlock size={18} className="mr-2" /> ปลดล็อกดูประวัติ</button>
           </div>
         )}
 
@@ -287,8 +298,38 @@ function TransferApp({ onBack }) {
 
       {/* 🖼️ Modal ต่างๆ ของระบบยอดโอน */}
       {previewImage && (<div className="fixed inset-0 bg-black/95 backdrop-blur-sm flex flex-col items-center justify-center p-4 animate-in zoom-in-95" style={{ zIndex: 100 }}><button onClick={() => setPreviewImage(null)} className="absolute top-6 right-6 text-white/50 hover:text-white bg-slate-800/50 p-2 rounded-full"><X size={24}/></button><img src={previewImage} className="max-w-full max-h-[85vh] object-contain rounded-xl shadow-2xl border border-slate-700" /></div>)}
-      {deletingId && (<div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" style={{ zIndex: 110 }}><div className="bg-[#24293f] border border-[#3b4363] p-8 rounded-3xl w-full max-w-xs text-center"><div className="text-red-400 mb-2 flex justify-center"><Trash2 size={32}/></div><h4 className="font-bold text-white mb-4">ลบประวัตินี้?</h4><div className="flex gap-2"><button onClick={() => setDeletingId(null)} className="flex-1 py-3 bg-[#1c2135] text-slate-400 rounded-xl font-bold border border-[#3b4363]">ยกเลิก</button><button onClick={handleDelete} className="flex-1 py-3 bg-red-500 text-white rounded-xl font-bold">ลบเลย</button></div></div></div>)}
-      {isClearingAll && (<div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-6" style={{ zIndex: 110 }}><div className="bg-[#24293f] border border-[#3b4363] p-6 rounded-3xl w-full max-w-sm text-center animate-in zoom-in-95"><div className="w-16 h-16 bg-red-500/10 text-red-400 rounded-full flex items-center justify-center mx-auto mb-4 border border-red-500/20"><Trash2 size={24}/></div><h3 className="font-black text-xl text-white mb-2">ล้างประวัติทั้งหมด?</h3><p className="text-[10px] text-red-400 mb-4 font-bold">* ใส่รหัส 1313 เพื่อยืนยันการลบประวัติยอดโอน</p><div className="bg-[#1c2135] p-3 rounded-xl mb-4 border border-[#3b4363]"><input type="password" placeholder="รหัสผ่าน" value={clearAllPin} onChange={e => setClearAllPin(e.target.value)} className="w-full p-3 bg-transparent text-white text-center text-lg font-black outline-none focus:border-red-400 tracking-[0.5em] font-mono" /></div><div className="flex gap-2"><button onClick={() => { setIsClearingAll(false); setClearAllPin(''); }} className="flex-1 py-3 bg-[#1c2135] text-slate-400 border border-[#3b4363] rounded-xl font-bold">ยกเลิก</button><button onClick={handleClearAll} disabled={loading} className="flex-1 py-3 bg-red-500 text-white rounded-xl font-black">{loading ? 'กำลังล้าง...' : 'ยืนยันล้าง'}</button></div></div></div>)}
+      
+      {/* 🗑️ Modal ลบประวัติ 1 รายการ (ใส่รหัส 0202) */}
+      {deletingId && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" style={{ zIndex: 110 }}>
+          <div className="bg-[#24293f] border border-[#3b4363] p-8 rounded-3xl w-full max-w-xs text-center">
+            <div className="text-red-400 mb-2 flex justify-center"><Trash2 size={32}/></div>
+            <h4 className="font-bold text-white mb-2">ลบประวัตินี้?</h4>
+            <p className="text-[10px] text-red-400 mb-4">* กรุณาใส่รหัสผ่านผู้ดูแลระบบ</p>
+            <input type="password" value={deletePin} onChange={e => setDeletePin(e.target.value)} className="w-full p-3 bg-[#1c2135] border border-[#3b4363] text-white rounded-xl text-center font-bold outline-none focus:border-red-400 mb-4 tracking-[0.5em] font-mono" placeholder="****" />
+            <div className="flex gap-2">
+              <button onClick={() => { setDeletingId(null); setDeletePin(''); }} className="flex-1 py-3 bg-[#1c2135] text-slate-400 rounded-xl font-bold border border-[#3b4363]">ยกเลิก</button>
+              <button onClick={handleDelete} className="flex-1 py-3 bg-red-500 text-white rounded-xl font-bold">ลบเลย</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🗑️ Modal ล้างประวัติทั้งหมด (ใส่รหัส 0202) */}
+      {isClearingAll && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-6" style={{ zIndex: 110 }}>
+          <div className="bg-[#24293f] border border-[#3b4363] p-6 rounded-3xl w-full max-w-sm text-center animate-in zoom-in-95">
+            <div className="w-16 h-16 bg-red-500/10 text-red-400 rounded-full flex items-center justify-center mx-auto mb-4 border border-red-500/20"><Trash2 size={24}/></div>
+            <h3 className="font-black text-xl text-white mb-2">ล้างประวัติทั้งหมด?</h3>
+            <p className="text-[10px] text-red-400 mb-4 font-bold">* กรุณาใส่รหัสผ่านผู้ดูแลระบบเพื่อยืนยันการลบ</p>
+            <div className="bg-[#1c2135] p-3 rounded-xl mb-4 border border-[#3b4363]"><input type="password" placeholder="รหัสผ่าน" value={clearAllPin} onChange={e => setClearAllPin(e.target.value)} className="w-full p-3 bg-transparent text-white text-center text-lg font-black outline-none focus:border-red-400 tracking-[0.5em] font-mono" /></div>
+            <div className="flex gap-2">
+              <button onClick={() => { setIsClearingAll(false); setClearAllPin(''); }} className="flex-1 py-3 bg-[#1c2135] text-slate-400 border border-[#3b4363] rounded-xl font-bold">ยกเลิก</button>
+              <button onClick={handleClearAll} disabled={loading} className="flex-1 py-3 bg-red-500 text-white rounded-xl font-black">{loading ? 'กำลังล้าง...' : 'ยืนยันล้าง'}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
