@@ -71,7 +71,7 @@ const IconPieChart = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" he
 
 
 // ============================================================================
-// 💸 SYSTEM 2: ระบบส่งยอดโอน
+// 💸 SYSTEM 2: ระบบส่งยอดโอน (มีรหัส 1313 ป้องกันหน้าสรุปยอด)
 // ============================================================================
 function TransferApp({ onBack }) {
   const TRANSFER_BRANCHES = [1, 2, 3, 4, 5]; 
@@ -174,14 +174,38 @@ function TransferApp({ onBack }) {
     );
   }
 
+  // ตัวแปรสำหรับหน้าประวัติ (กรองแค่สาขาที่เลือก)
   const filteredRecords = historyList.filter(r => {
       if (!r) return false;
       return r.branch === selectedBranch && (r.submitDate === filterDate || (!r.submitDate && getLocalYMD(r.createdAt) === filterDate));
   });
+
+  // ตัวแปรสำหรับหน้า Dashboard (คำนวณยอดรวมทุกสาขาในวันที่เลือก)
+  const filteredAllBranches = historyList.filter(r => {
+      if (!r) return false;
+      return r.submitDate === filterDate || (!r.submitDate && getLocalYMD(r.createdAt) === filterDate);
+  });
   
-  const totalTransferred = filteredRecords.reduce((sum, r) => sum + (parseFloat(r?.transfer) || 0), 0);
-  const totalByShift = { "เช้า": 0, "บ่าย": 0, "ดึก": 0 };
-  filteredRecords.forEach(r => { const s = r?.shift || 'เช้า'; if(totalByShift[s] !== undefined) { totalByShift[s] += parseFloat(r?.transfer) || 0; } });
+  const totalTransferredAll = filteredAllBranches.reduce((sum, r) => sum + (parseFloat(r?.transfer) || 0), 0);
+  
+  // จัดกลุ่มยอดเงินแยกตามกะ และแยกรหัสสาขาย่อยด้านใน
+  const shiftSummaryDetail = {};
+  SHIFTS.forEach(s => { 
+      shiftSummaryDetail[s] = { total: 0, branches: {} }; 
+      TRANSFER_BRANCHES.forEach(b => shiftSummaryDetail[s].branches[b] = 0); 
+  });
+  
+  filteredAllBranches.forEach(r => {
+      const s = r?.shift || 'เช้า';
+      const b = parseInt(r?.branch);
+      const amt = parseFloat(r?.transfer) || 0;
+      if (shiftSummaryDetail[s]) {
+          shiftSummaryDetail[s].total += amt;
+          if (!isNaN(b) && shiftSummaryDetail[s].branches[b] !== undefined) {
+              shiftSummaryDetail[s].branches[b] += amt;
+          }
+      }
+  });
 
   return (
     <div className="min-h-screen bg-[#111526] pb-32 font-sans text-white">
@@ -225,7 +249,7 @@ function TransferApp({ onBack }) {
              <h3 className="font-black text-xl text-white mb-2">โซนเถ้าแก่</h3>
              <p className="text-xs text-slate-400 mb-6 font-bold">กรุณาใส่รหัสผ่านเพื่อดูสรุปยอดโอน</p>
              <input type="password" value={ownerPin} onChange={e => setOwnerPin(e.target.value)} className="w-full p-4 bg-[#1c2135] border border-[#3b4363] text-white rounded-xl text-center text-2xl font-black tracking-[0.5em] outline-none mb-4 focus:border-amber-400 transition-all font-mono" placeholder="****" autoFocus />
-             {/* ✅ เปลี่ยนรหัสดูยอดเป็น 6969 */}
+             {/* ✅ รหัสดูยอด 6969 */}
              <button onClick={() => { if(ownerPin === '6969') { setIsOwnerUnlocked(true); setOwnerPin(''); } else { alert('รหัสผ่านไม่ถูกต้อง ❌'); setOwnerPin(''); } }} className="w-full p-4 bg-amber-500 hover:bg-amber-600 text-white rounded-2xl font-black shadow-lg text-lg transition-all flex justify-center items-center"><Unlock size={18} className="mr-2" /> ปลดล็อกดูยอด</button>
           </div>
         )}
@@ -238,28 +262,56 @@ function TransferApp({ onBack }) {
 
              <div className="bg-gradient-to-r from-blue-600/20 to-indigo-700/20 border border-blue-500/30 text-white p-6 rounded-3xl shadow-lg text-center relative overflow-hidden">
                 <div className="absolute -right-4 -top-4 opacity-10 transform scale-150"><IconPieChart /></div>
-                <h2 className="text-sm font-bold opacity-90 mb-1 text-blue-400">ยอดโอนรวม สาขา {selectedBranch}</h2>
+                <h2 className="text-sm font-bold opacity-90 mb-1 text-blue-400">ยอดโอนรวมทุกสาขา</h2>
                 <div className="text-[10px] text-slate-400 mb-3">(ยอดประจำวันที่ {filterDate})</div>
-                <div className="text-4xl font-black tracking-tight">{!isNaN(totalTransferred) ? totalTransferred.toLocaleString() : '0'} <span className="text-lg">฿</span></div>
+                <div className="text-4xl font-black tracking-tight">{!isNaN(totalTransferredAll) ? totalTransferredAll.toLocaleString() : '0'} <span className="text-lg">฿</span></div>
              </div>
-             <div className="grid grid-cols-3 gap-3">
-                {Object.keys(totalByShift).map(s => (
-                  <div key={s} className="bg-[#1e2336] p-3 rounded-2xl shadow-sm border border-[#3b4363] text-center">
-                     <div className="text-[10px] font-bold text-slate-400 mb-1">กะ{s}</div><div className="text-sm font-black text-blue-400">{!isNaN(totalByShift[s]) ? totalByShift[s].toLocaleString() : '0'}</div>
-                  </div>
-                ))}
+             
+             {/* ส่วนแสดงผลแบบใหม่: แยกกะ และบอกรายละเอียดยอดแต่ละสาขา */}
+             <div className="space-y-3 mt-4">
+                {SHIFTS.map(shiftName => {
+                   if (shiftSummaryDetail[shiftName].total === 0) return null;
+                   return (
+                      <div key={shiftName} className="bg-[#1e2336] rounded-3xl p-5 shadow-sm border border-[#3b4363] overflow-hidden relative">
+                         <div className="flex justify-between items-end mb-3 border-b border-[#3b4363] pb-3">
+                            <h3 className="font-black text-white text-lg flex items-center gap-2">
+                               {shiftName === 'เช้า' ? '☀️' : shiftName === 'บ่าย' ? '🌤️' : '🌙'} กะ{shiftName}
+                            </h3>
+                            <div className="text-right">
+                               <div className="text-[10px] text-slate-400 font-bold mb-0.5">ยอดรวมกะ{shiftName}</div>
+                               <div className="text-xl font-black text-blue-400">{shiftSummaryDetail[shiftName].total.toLocaleString()} ฿</div>
+                            </div>
+                         </div>
+                         <div className="space-y-2">
+                            {TRANSFER_BRANCHES.map(branch => {
+                               const amt = shiftSummaryDetail[shiftName].branches[branch];
+                               if (amt === 0) return null;
+                               return (
+                                  <div key={branch} className="flex justify-between items-center bg-[#24293f] p-2.5 rounded-xl border border-[#3b4363]">
+                                     <div className="text-xs font-bold text-slate-300">สาขา {branch}</div>
+                                     <div className="text-sm font-black text-white">{amt.toLocaleString()} ฿</div>
+                                  </div>
+                               );
+                            })}
+                         </div>
+                      </div>
+                   );
+                })}
+                {totalTransferredAll === 0 && (
+                   <div className="text-center py-8 text-slate-500 text-xs bg-[#1e2336] rounded-2xl border border-[#3b4363]">ไม่มียอดโอนในช่วงเวลาที่เลือก</div>
+                )}
              </div>
           </div>
         )}
 
-        {/* หน้าประวัติ */}
+        {/* หน้าประวัติ (ต้องใส่รหัส 6969 ก่อนดู) */}
         {activeTab === 'history' && !isOwnerUnlocked && (
           <div className="bg-[#1e2336] p-8 rounded-3xl shadow-sm border border-[#3b4363] text-center animate-in zoom-in-95">
              <div className="w-16 h-16 bg-[#24293f] border border-[#3b4363] rounded-full flex items-center justify-center mx-auto mb-4"><Lock size={30} className="text-amber-400" /></div>
              <h3 className="font-black text-xl text-white mb-2">โซนเถ้าแก่</h3>
              <p className="text-xs text-slate-400 mb-6 font-bold">กรุณาใส่รหัสผ่านเพื่อดูประวัติโอน</p>
              <input type="password" value={ownerPin} onChange={e => setOwnerPin(e.target.value)} className="w-full p-4 bg-[#1c2135] border border-[#3b4363] text-white rounded-xl text-center text-2xl font-black tracking-[0.5em] outline-none mb-4 focus:border-amber-400 transition-all font-mono" placeholder="****" autoFocus />
-             {/* ✅ เปลี่ยนรหัสดูประวัติเป็น 6969 */}
+             {/* ✅ รหัสดูประวัติ 6969 */}
              <button onClick={() => { if(ownerPin === '6969') { setIsOwnerUnlocked(true); setOwnerPin(''); } else { alert('รหัสผ่านไม่ถูกต้อง ❌'); setOwnerPin(''); } }} className="w-full p-4 bg-amber-500 hover:bg-amber-600 text-white rounded-2xl font-black shadow-lg text-lg transition-all flex justify-center items-center"><Unlock size={18} className="mr-2" /> ปลดล็อกดูประวัติ</button>
           </div>
         )}
