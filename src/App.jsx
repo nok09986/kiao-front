@@ -179,14 +179,19 @@ function TransferApp({ onBack }) {
       return r.submitDate === filterDate || (!r.submitDate && getLocalYMD(r.createdAt) === filterDate);
   });
   
+  // ✅ โครงสร้างข้อมูลใหม่: คำนวณแบบเอา "กะ" เป็นแกนหลัก แล้วย่อยด้วย "สาขา"
   let totalTransferredAll = 0;
-  const branchSummaryDetail = {};
+  const shiftSummaryDetail = {};
   
-  TRANSFER_BRANCHES.forEach(b => {
-      branchSummaryDetail[b] = { 
+  SHIFTS.forEach(s => {
+      shiftSummaryDetail[s] = { 
           total: 0, 
-          shifts: { "เช้า": 0, "บ่าย": 0, "ดึก": 0 } 
+          branches: {} 
       };
+      // เตรียมช่องว่างสำหรับแต่ละสาขาในกะนั้นๆ
+      TRANSFER_BRANCHES.forEach(b => {
+          shiftSummaryDetail[s].branches[b] = 0;
+      });
   });
 
   filteredAllBranches.forEach(r => {
@@ -196,10 +201,10 @@ function TransferApp({ onBack }) {
       
       totalTransferredAll += amt;
       
-      if (branchSummaryDetail[b]) {
-          branchSummaryDetail[b].total += amt;
-          if (branchSummaryDetail[b].shifts[s] !== undefined) {
-              branchSummaryDetail[b].shifts[s] += amt;
+      if (shiftSummaryDetail[s]) {
+          shiftSummaryDetail[s].total += amt; // ยอดรวมของกะนั้นๆ
+          if (shiftSummaryDetail[s].branches[b] !== undefined) {
+              shiftSummaryDetail[s].branches[b] += amt; // ยอดรวมของสาขาในกะนั้นๆ
           }
       }
   });
@@ -250,7 +255,7 @@ function TransferApp({ onBack }) {
           </div>
         )}
 
-        {/* ✅ Dashboard: รายงานสรุปยอดโอนรวมทุกสาขา และแยกตามกะ */}
+        {/* ✅ Dashboard: โครงสร้างแบบใหม่ (กะ -> สาขา) พร้อมระบบซ่อนอัตโนมัติ */}
         {activeTab === 'dashboard' && isOwnerUnlocked && (
           <div className="space-y-6 animate-in fade-in duration-500">
             {/* ส่วนเลือกวันที่สำหรับการตรวจสอบข้อมูล */}
@@ -284,42 +289,47 @@ function TransferApp({ onBack }) {
               </p>
             </div>
             
-            {/* ส่วนที่ 2: รายละเอียดรายงานแยกตามรายสาขา และรายกะ */}
+            {/* ส่วนที่ 2: รายละเอียดแยกตามกะ และ สาขา */}
             <div className="space-y-5">
               <h3 className="text-[11px] font-black text-slate-400 px-2 uppercase tracking-[0.2em]">
-                รายละเอียดแยกตามสาขา
+                รายละเอียดแยกตามกะ
               </h3>
               
-              {TRANSFER_BRANCHES.map(branch => {
-                const bData = branchSummaryDetail[branch];
+              {SHIFTS.map(shift => {
+                const sData = shiftSummaryDetail[shift];
+                
+                // 🌟 ระบบซ่อนกะอัตโนมัติ: ถ้ากะนี้ ไม่มียอดโอนเข้ามาเลย (ยอดเป็น 0) จะไม่แสดงผลกะนี้ให้เกะกะ
+                if (sData.total === 0) return null;
                 
                 return (
-                  <div key={branch} className="bg-[#1e2336] rounded-[2rem] p-6 shadow-xl border border-[#3b4363] relative overflow-hidden animate-in slide-in-from-bottom-2">
+                  <div key={shift} className="bg-[#1e2336] rounded-[2rem] p-6 shadow-xl border border-[#3b4363] relative overflow-hidden animate-in slide-in-from-bottom-2">
                     <div className="flex justify-between items-center mb-6 border-b border-[#3b4363]/50 pb-4">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-amber-500/10 rounded-xl flex items-center justify-center border border-amber-500/20">
-                          <Store size={20} className="text-amber-400" />
+                        <div className="w-10 h-10 bg-indigo-500/10 rounded-xl flex items-center justify-center border border-indigo-500/20">
+                          <Clock size={20} className="text-indigo-400" />
                         </div>
                         <div>
-                          <h4 className="font-black text-white text-lg">สาขา {branch}</h4>
-                          <p className="text-[9px] text-slate-500 font-bold uppercase tracking-tighter">Branch Department</p>
+                          <h4 className="font-black text-white text-lg">กะ{shift}</h4>
+                          <p className="text-[9px] text-slate-500 font-bold uppercase tracking-tighter">Shift Summary</p>
                         </div>
                       </div>
                       <div className="text-right">
-                        <div className="text-[10px] text-slate-400 font-black mb-1 uppercase">รวมสาขานี้</div>
+                        <div className="text-[10px] text-slate-400 font-black mb-1 uppercase">รวมยอดกะนี้</div>
                         <div className="text-xl font-black text-white tracking-tight">
-                          {bData.total.toLocaleString()} <span className="text-sm text-amber-400">฿</span>
+                          {sData.total.toLocaleString()} <span className="text-sm text-indigo-400">฿</span>
                         </div>
                       </div>
                     </div>
 
-                    {/* การแสดงผลแบ่งตามกะ: เช้า บ่าย ดึก */}
+                    {/* การแสดงผลแบ่งตามสาขา (สาขา 2, สาขา 3, สาขา 5) */}
                     <div className="grid grid-cols-3 gap-3">
-                      {SHIFTS.map(s => (
-                        <div key={s} className="bg-[#24293f] p-4 rounded-2xl border border-[#3b4363] text-center transition-all hover:border-blue-500/30">
-                          <div className="text-[10px] font-black text-slate-500 mb-2 uppercase tracking-widest">กะ{s}</div>
-                          <div className={`text-base font-black ${bData.shifts[s] > 0 ? 'text-blue-400' : 'text-slate-700'}`}>
-                            {bData.shifts[s].toLocaleString()}
+                      {TRANSFER_BRANCHES.map(b => (
+                        <div key={b} className="bg-[#24293f] p-4 rounded-2xl border border-[#3b4363] text-center transition-all hover:border-amber-500/30">
+                          <div className="text-[10px] font-black text-slate-500 mb-2 uppercase tracking-widest flex justify-center items-center gap-1">
+                            <Store size={10} className="text-slate-600"/> สาขา {b}
+                          </div>
+                          <div className={`text-base font-black ${sData.branches[b] > 0 ? 'text-amber-400' : 'text-slate-700'}`}>
+                            {sData.branches[b].toLocaleString()}
                           </div>
                           <div className="text-[8px] text-slate-600 font-bold mt-1 uppercase">THB</div>
                         </div>
@@ -329,7 +339,7 @@ function TransferApp({ onBack }) {
                 );
               })}
 
-              {/* กรณีไม่พบข้อมูลในระบบ */}
+              {/* กรณีไม่พบข้อมูลเลยในทุกกะ */}
               {totalTransferredAll === 0 && (
                 <div className="text-center py-12 bg-[#1e2336] rounded-[2rem] border border-dashed border-[#3b4363]">
                   <div className="text-slate-600 mb-2 flex justify-center"><ShieldAlert size={32} /></div>
