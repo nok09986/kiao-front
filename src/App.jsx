@@ -71,10 +71,11 @@ const IconPieChart = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" he
 
 
 // ============================================================================
-// 💸 SYSTEM 2: ระบบส่งยอดโอน (มีรหัส 1313 ป้องกันหน้าสรุปยอด)
+// 💸 SYSTEM 2: ระบบส่งยอดโอน 
 // ============================================================================
 function TransferApp({ onBack }) {
-  const TRANSFER_BRANCHES = [1, 2, 3, 4, 5]; 
+  // ✅ แก้ไข: เหลือแค่สาขา 2, 3, 5
+  const TRANSFER_BRANCHES = [2, 3, 5]; 
   const [activeTab, setActiveTab] = useState('form');
   const [selectedBranch, setSelectedBranch] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -93,7 +94,7 @@ function TransferApp({ onBack }) {
 
   const [filterDate, setFilterDate] = useState(getTodayIso());
 
-  // 🔒 State สำหรับปลดล็อกดูยอดโอน
+  // 🔒 State สำหรับปลดล็อกดูยอดโอน (สรุปยอด)
   const [isOwnerUnlocked, setIsOwnerUnlocked] = useState(false);
   const [ownerPin, setOwnerPin] = useState('');
 
@@ -170,7 +171,7 @@ function TransferApp({ onBack }) {
 
   if (!selectedBranch) {
     return (
-      <div className="min-h-screen bg-[#111526] flex items-center justify-center p-6 animate-in fade-in"><div className="bg-[#1e2336] p-8 rounded-[3rem] shadow-xl w-full max-w-sm text-center relative border border-[#3b4363]"><button onClick={onBack} className="absolute top-6 left-6 text-slate-400 hover:text-white"><ChevronLeft size={24}/></button><div className="w-20 h-20 bg-amber-500/20 text-amber-400 rounded-full flex items-center justify-center mx-auto mb-6"><IconBanknote /></div><h2 className="text-2xl font-bold mb-2 text-white">ระบบส่งยอดโอน</h2><p className="text-sm text-slate-400 mb-8">กรุณาเลือกสาขา</p><div className="grid grid-cols-2 gap-3">{TRANSFER_BRANCHES.map(n => <button key={n} onClick={() => setSelectedBranch(n.toString())} className="py-4 border border-[#3b4363] bg-[#24293f] text-white rounded-2xl font-bold hover:border-amber-400 active:scale-95 transition-all">สาขา {n}</button>)}</div></div></div>
+      <div className="min-h-screen bg-[#111526] flex items-center justify-center p-6 animate-in fade-in"><div className="bg-[#1e2336] p-8 rounded-[3rem] shadow-xl w-full max-w-sm text-center relative border border-[#3b4363]"><button onClick={onBack} className="absolute top-6 left-6 text-slate-400 hover:text-white"><ChevronLeft size={24}/></button><div className="w-20 h-20 bg-amber-500/20 text-amber-400 rounded-full flex items-center justify-center mx-auto mb-6"><IconBanknote /></div><h2 className="text-2xl font-bold mb-2 text-white">ระบบส่งยอดโอน</h2><p className="text-sm text-slate-400 mb-8">กรุณาเลือกสาขา</p><div className="flex justify-center gap-3">{TRANSFER_BRANCHES.map(n => <button key={n} onClick={() => setSelectedBranch(n.toString())} className="flex-1 py-4 border border-[#3b4363] bg-[#24293f] text-white rounded-2xl font-bold hover:border-amber-400 active:scale-95 transition-all">สาขา {n}</button>)}</div></div></div>
     );
   }
 
@@ -304,19 +305,8 @@ function TransferApp({ onBack }) {
           </div>
         )}
 
-        {/* หน้าประวัติ (ต้องใส่รหัส 6969 ก่อนดู) */}
-        {activeTab === 'history' && !isOwnerUnlocked && (
-          <div className="bg-[#1e2336] p-8 rounded-3xl shadow-sm border border-[#3b4363] text-center animate-in zoom-in-95">
-             <div className="w-16 h-16 bg-[#24293f] border border-[#3b4363] rounded-full flex items-center justify-center mx-auto mb-4"><Lock size={30} className="text-amber-400" /></div>
-             <h3 className="font-black text-xl text-white mb-2">โซนเถ้าแก่</h3>
-             <p className="text-xs text-slate-400 mb-6 font-bold">กรุณาใส่รหัสผ่านเพื่อดูประวัติโอน</p>
-             <input type="password" value={ownerPin} onChange={e => setOwnerPin(e.target.value)} className="w-full p-4 bg-[#1c2135] border border-[#3b4363] text-white rounded-xl text-center text-2xl font-black tracking-[0.5em] outline-none mb-4 focus:border-amber-400 transition-all font-mono" placeholder="****" autoFocus />
-             {/* ✅ รหัสดูประวัติ 6969 */}
-             <button onClick={() => { if(ownerPin === '6969') { setIsOwnerUnlocked(true); setOwnerPin(''); } else { alert('รหัสผ่านไม่ถูกต้อง ❌'); setOwnerPin(''); } }} className="w-full p-4 bg-amber-500 hover:bg-amber-600 text-white rounded-2xl font-black shadow-lg text-lg transition-all flex justify-center items-center"><Unlock size={18} className="mr-2" /> ปลดล็อกดูประวัติ</button>
-          </div>
-        )}
-
-        {activeTab === 'history' && isOwnerUnlocked && (
+        {/* ✅ แก้ไข: หน้าประวัติไม่ต้องใส่รหัสผ่านแล้ว ดูได้เลย */}
+        {activeTab === 'history' && (
           <div className="space-y-4 animate-in fade-in">
              <div className="bg-[#1e2336] p-4 rounded-2xl shadow-sm border border-[#3b4363] flex gap-3">
                  <div className="flex-1"><label className="text-[10px] font-bold text-slate-400 block mb-1">📅 เลือกวันที่ดูย้อนหลัง</label><input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} className="w-full p-2 bg-[#24293f] border border-[#3b4363] text-white rounded-lg text-sm font-bold outline-none" /></div>
