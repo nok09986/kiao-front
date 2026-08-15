@@ -1,6 +1,6 @@
 /* eslint-disable */
 import React, { useState, useEffect } from 'react';
-import { Crown, Store, Lock, Unlock, CheckCircle, ShieldAlert, FileText, Search, BarChart2, ChevronLeft, Wallet, User, Calendar, Clock, MapPin, Trash2, Filter, AlertTriangle, Edit2, X, Info, Image as ImageIcon, Plus } from 'lucide-react';
+import { Crown, Store, Lock, Unlock, CheckCircle, ShieldAlert, FileText, Search, BarChart2, ChevronLeft, Wallet, User, Calendar, Clock, MapPin, Trash2, Filter, AlertTriangle, Edit2, X, Info, Image as ImageIcon, Plus, Loader2 } from 'lucide-react';
 
 // --- นำเข้า Firebase ---
 import { initializeApp } from 'firebase/app';
@@ -26,6 +26,11 @@ try {
 } catch (e) {
   console.error("Firebase init error", e);
 }
+
+// ============================================================================
+// 🔑 ใส่ SECRET KEY จาก Slip2Go เรียบร้อยแล้ว
+// ============================================================================
+const SLIP2GO_SECRET_KEY = "gaHTLTHzI2ohH5w_YkYhuJrEIyxjZn8WRLtk2GsBM2w="; 
 
 // --- ฟังก์ชันเสริมส่วนกลาง ---
 const EXPENSE_TYPES = ['ค่าน้ำแข็ง', 'ค่าพัสดุ', 'เบิกค่าแรง', 'ค่าน้ำผลไม้', 'ค่าถุง', 'อื่นๆ'];
@@ -53,6 +58,37 @@ const compressImage = (file) => {
   });
 };
 
+// ฟังก์ชันเรียกใช้ API ตรวจสอบสลิป Slip2Go
+const verifySlipWithAPI = async (base64Image) => {
+  try {
+    const response = await fetch('https://connect.slip2go.com/api/verify-slip/qr-base64/info', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': SLIP2GO_SECRET_KEY
+      },
+      body: JSON.stringify({
+        payload: {
+          imageBase64: base64Image
+        }
+      })
+    });
+    
+    const result = await response.json();
+    console.log("Slip2Go Response:", result);
+    
+    if (result.code === '200000' || result.data?.amount !== undefined || result.amount !== undefined) {
+       const amount = result.data?.amount ?? result.amount ?? result.payload?.amount;
+       return { success: true, amount: amount };
+    }
+    
+    return { success: false, message: result.message || "ไม่สามารถอ่านสลิปได้ หรือสลิปไม่ถูกต้อง" };
+  } catch (error) {
+    console.error("API Error:", error);
+    return { success: false, message: 'การเชื่อมต่อระบบตรวจสอบสลิปล้มเหลว' };
+  }
+};
+
 const getTodayIso = () => {
   const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
@@ -77,6 +113,7 @@ function TransferApp({ onBack }) {
   const [activeTab, setActiveTab] = useState('form');
   const [selectedBranch, setSelectedBranch] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
   const [historyList, setHistoryList] = useState([]);
   
   const [form, setForm] = useState({ staff: '', shift: SHIFTS[0], transfer: '', slipTime: '', slipImage: '' });
@@ -103,7 +140,24 @@ function TransferApp({ onBack }) {
 
   const handleImageUpload = async (e) => {
     const file = e.target.files[0]; if (!file) return;
-    try { const compressedBase64 = await compressImage(file); setForm({ ...form, slipImage: compressedBase64 }); } catch (err) {}
+    try { 
+      setIsVerifying(true);
+      const compressedBase64 = await compressImage(file); 
+      setForm(prev => ({ ...prev, slipImage: compressedBase64 })); 
+      
+      // เรียกใช้ API ตรวจสอบสลิป Slip2Go
+      const verifyResult = await verifySlipWithAPI(compressedBase64);
+      if (verifyResult.success) {
+        setForm(prev => ({ ...prev, slipImage: compressedBase64, transfer: verifyResult.amount.toString() }));
+        alert(`✅ ตรวจสอบสลิปสำเร็จ! ยอดเงิน: ${verifyResult.amount} บาท`);
+      } else {
+        alert(`⚠️ ${verifyResult.message}\n(สามารถพิมพ์ระบุยอดเงินด้วยตนเองได้)`);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsVerifying(false);
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -120,7 +174,10 @@ function TransferApp({ onBack }) {
       });
       setForm({ staff: '', shift: SHIFTS[0], transfer: '', slipTime: '', slipImage: '' });
       alert("✅ บันทึกข้อมูลยอดโอนสำเร็จ"); setActiveTab('history');
-    } catch (err) { console.error(err); } finally { setLoading(false); }
+    } catch (err) { 
+      alert("❌ เกิดข้อผิดพลาดจากระบบ: " + err.message);
+      console.error(err); 
+    } finally { setLoading(false); }
   };
 
   const openEdit = (record) => {
@@ -142,7 +199,10 @@ function TransferApp({ onBack }) {
       });
       setEditSession(null); setForm({ staff: '', shift: SHIFTS[0], transfer: '', slipTime: '', slipImage: '' });
       alert("✅ อัปเดตข้อมูลยอดโอนสำเร็จ"); setActiveTab('history');
-    } catch (err) { console.error(err); } finally { setLoading(false); }
+    } catch (err) { 
+      alert("❌ เกิดข้อผิดพลาดจากระบบ: " + err.message);
+      console.error(err); 
+    } finally { setLoading(false); }
   };
 
   const handleDelete = async () => { 
@@ -179,19 +239,12 @@ function TransferApp({ onBack }) {
       return r.submitDate === filterDate || (!r.submitDate && getLocalYMD(r.createdAt) === filterDate);
   });
   
-  // ✅ โครงสร้างข้อมูลใหม่: คำนวณแบบเอา "กะ" เป็นแกนหลัก แล้วย่อยด้วย "สาขา"
   let totalTransferredAll = 0;
   const shiftSummaryDetail = {};
   
   SHIFTS.forEach(s => {
-      shiftSummaryDetail[s] = { 
-          total: 0, 
-          branches: {} 
-      };
-      // เตรียมช่องว่างสำหรับแต่ละสาขาในกะนั้นๆ
-      TRANSFER_BRANCHES.forEach(b => {
-          shiftSummaryDetail[s].branches[b] = 0;
-      });
+      shiftSummaryDetail[s] = { total: 0, branches: {} };
+      TRANSFER_BRANCHES.forEach(b => { shiftSummaryDetail[s].branches[b] = 0; });
   });
 
   filteredAllBranches.forEach(r => {
@@ -202,9 +255,9 @@ function TransferApp({ onBack }) {
       totalTransferredAll += amt;
       
       if (shiftSummaryDetail[s]) {
-          shiftSummaryDetail[s].total += amt; // ยอดรวมของกะนั้นๆ
+          shiftSummaryDetail[s].total += amt;
           if (shiftSummaryDetail[s].branches[b] !== undefined) {
-              shiftSummaryDetail[s].branches[b] += amt; // ยอดรวมของสาขาในกะนั้นๆ
+              shiftSummaryDetail[s].branches[b] += amt;
           }
       }
   });
@@ -232,14 +285,20 @@ function TransferApp({ onBack }) {
                <div><label className="text-[11px] font-bold text-slate-400 block mb-1">🕒 เวลาตามหลักฐานโอน</label><input type="time" value={form.slipTime} onChange={e => setForm({...form, slipTime: e.target.value})} className="w-full p-3 bg-[#24293f] rounded-xl border border-[#3b4363] text-white outline-none font-bold focus:border-amber-400" required /></div>
             </div>
             <div>
-               <label className="text-[11px] font-bold text-slate-400 block mb-1">📸 ภาพหลักฐานการโอนเงิน</label>
-               <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-[#3b4363] rounded-2xl cursor-pointer hover:bg-[#2d334d] bg-[#24293f] overflow-hidden relative">
-                  {form.slipImage ? ( <img src={form.slipImage} alt="slip" className="w-full h-full object-contain" /> ) : ( <div className="flex flex-col items-center justify-center pt-5 pb-6 text-slate-500"><ImageIcon size={24}/><p className="text-[9px] font-bold mt-2">กรุณาแนบภาพหลักฐาน</p></div> )}
-                  <input type="file" className="hidden" accept="image/*" onChange={handleImageUpload} />
+               <label className="text-[11px] font-bold text-slate-400 block mb-1">📸 ภาพหลักฐานการโอนเงิน (ระบบตรวจอัตโนมัติ)</label>
+               <label className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed ${isVerifying ? 'border-amber-400 bg-amber-400/10' : 'border-[#3b4363] bg-[#24293f] hover:bg-[#2d334d]'} rounded-2xl cursor-pointer overflow-hidden relative transition-all`}>
+                  {isVerifying ? (
+                     <div className="flex flex-col items-center justify-center text-amber-400"><Loader2 className="animate-spin mb-2" size={24}/><p className="text-[10px] font-bold">กำลังตรวจสอบสลิป...</p></div>
+                  ) : form.slipImage ? ( 
+                     <img src={form.slipImage} alt="slip" className="w-full h-full object-contain" /> 
+                  ) : ( 
+                     <div className="flex flex-col items-center justify-center pt-5 pb-6 text-slate-500"><ImageIcon size={24}/><p className="text-[9px] font-bold mt-2">แตะเพื่อแนบภาพ และตรวจสอบสลิป</p></div> 
+                  )}
+                  <input type="file" className="hidden" accept="image/*" onChange={handleImageUpload} disabled={isVerifying} />
                </label>
             </div>
             <div className="pt-2">
-               {editSession ? (<div className="flex gap-2"><button type="button" onClick={() => {setEditSession(null); setForm({ staff: '', shift: SHIFTS[0], transfer: '', slipTime: '', slipImage: '' }); setActiveTab('history');}} className="flex-1 p-4 bg-[#3b4363] text-white rounded-2xl font-black">ยกเลิกการแก้ไข</button><button type="submit" disabled={loading} className="flex-1 p-4 bg-amber-500 text-white rounded-2xl font-black shadow-lg">{loading ? 'กำลังดำเนินการ...' : 'อัปเดตข้อมูล'}</button></div>) : (<button type="submit" disabled={loading} className="w-full p-4 bg-amber-500 text-white rounded-2xl font-black shadow-lg hover:bg-amber-600 text-lg">{loading ? 'กำลังดำเนินการ...' : 'ยืนยันการบันทึกยอดโอน'}</button>)}
+               {editSession ? (<div className="flex gap-2"><button type="button" onClick={() => {setEditSession(null); setForm({ staff: '', shift: SHIFTS[0], transfer: '', slipTime: '', slipImage: '' }); setActiveTab('history');}} className="flex-1 p-4 bg-[#3b4363] text-white rounded-2xl font-black">ยกเลิกการแก้ไข</button><button type="submit" disabled={loading || isVerifying} className="flex-1 p-4 bg-amber-500 text-white rounded-2xl font-black shadow-lg">{loading ? 'กำลังดำเนินการ...' : 'อัปเดตข้อมูล'}</button></div>) : (<button type="submit" disabled={loading || isVerifying} className="w-full p-4 bg-amber-500 text-white rounded-2xl font-black shadow-lg hover:bg-amber-600 text-lg">{loading ? 'กำลังดำเนินการ...' : 'ยืนยันการบันทึกยอดโอน'}</button>)}
             </div>
           </form>
         )}
@@ -255,10 +314,9 @@ function TransferApp({ onBack }) {
           </div>
         )}
 
-        {/* ✅ Dashboard: โครงสร้างแบบใหม่ (กะ -> สาขา) พร้อมระบบซ่อนอัตโนมัติ */}
+        {/* ✅ Dashboard */}
         {activeTab === 'dashboard' && isOwnerUnlocked && (
           <div className="space-y-6 animate-in fade-in duration-500">
-            {/* ส่วนเลือกวันที่สำหรับการตรวจสอบข้อมูล */}
             <div className="bg-[#1e2336] p-4 rounded-2xl shadow-sm border border-[#3b4363] flex gap-3">
               <div className="flex-1">
                 <label className="text-[11px] font-bold text-slate-400 block mb-2 uppercase tracking-wider">
@@ -273,7 +331,6 @@ function TransferApp({ onBack }) {
               </div>
             </div>
 
-            {/* ส่วนที่ 1: รายงานยอดโอนรวมสุทธิทุกสาขา (Grand Total) */}
             <div className="bg-gradient-to-br from-[#1e293b] to-[#0f172a] border border-blue-500/30 text-white p-8 rounded-[2.5rem] shadow-2xl text-center relative overflow-hidden">
               <div className="absolute -right-6 -top-6 opacity-5 transform scale-150">
                 <IconPieChart />
@@ -289,7 +346,6 @@ function TransferApp({ onBack }) {
               </p>
             </div>
             
-            {/* ส่วนที่ 2: รายละเอียดแยกตามกะ และ สาขา */}
             <div className="space-y-5">
               <h3 className="text-[11px] font-black text-slate-400 px-2 uppercase tracking-[0.2em]">
                 รายละเอียดแยกตามกะ
@@ -297,8 +353,6 @@ function TransferApp({ onBack }) {
               
               {SHIFTS.map(shift => {
                 const sData = shiftSummaryDetail[shift];
-                
-                // 🌟 ระบบซ่อนกะอัตโนมัติ: ถ้ากะนี้ ไม่มียอดโอนเข้ามาเลย (ยอดเป็น 0) จะไม่แสดงผลกะนี้ให้เกะกะ
                 if (sData.total === 0) return null;
                 
                 return (
@@ -321,7 +375,6 @@ function TransferApp({ onBack }) {
                       </div>
                     </div>
 
-                    {/* การแสดงผลแบ่งตามสาขา (สาขา 2, สาขา 3, สาขา 5) */}
                     <div className="grid grid-cols-3 gap-3">
                       {TRANSFER_BRANCHES.map(b => (
                         <div key={b} className="bg-[#24293f] p-4 rounded-2xl border border-[#3b4363] text-center transition-all hover:border-amber-500/30">
@@ -339,7 +392,6 @@ function TransferApp({ onBack }) {
                 );
               })}
 
-              {/* กรณีไม่พบข้อมูลเลยในทุกกะ */}
               {totalTransferredAll === 0 && (
                 <div className="text-center py-12 bg-[#1e2336] rounded-[2rem] border border-dashed border-[#3b4363]">
                   <div className="text-slate-600 mb-2 flex justify-center"><ShieldAlert size={32} /></div>
@@ -350,7 +402,6 @@ function TransferApp({ onBack }) {
           </div>
         )}
 
-        {/* หน้าประวัติ (เปิดดูได้เลยไม่ต้องใส่รหัส) */}
         {activeTab === 'history' && (
           <div className="space-y-4 animate-in fade-in">
              <div className="bg-[#1e2336] p-4 rounded-2xl shadow-sm border border-[#3b4363] flex gap-3">
@@ -383,10 +434,8 @@ function TransferApp({ onBack }) {
         )}
       </main>
 
-      {/* 🖼️ Modal ต่างๆ ของระบบยอดโอน */}
       {previewImage && (<div className="fixed inset-0 bg-black/95 backdrop-blur-sm flex flex-col items-center justify-center p-4 animate-in zoom-in-95" style={{ zIndex: 100 }}><button onClick={() => setPreviewImage(null)} className="absolute top-6 right-6 text-white/50 hover:text-white bg-slate-800/50 p-2 rounded-full"><X size={24}/></button><img src={previewImage} className="max-w-full max-h-[85vh] object-contain rounded-xl shadow-2xl border border-slate-700" /></div>)}
       
-      {/* 🗑️ Modal ลบประวัติ 1 รายการ */}
       {deletingId && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" style={{ zIndex: 110 }}>
           <div className="bg-[#24293f] border border-[#3b4363] p-8 rounded-3xl w-full max-w-xs text-center">
@@ -402,7 +451,6 @@ function TransferApp({ onBack }) {
         </div>
       )}
 
-      {/* 🗑️ Modal ล้างประวัติทั้งหมด */}
       {isClearingAll && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-6" style={{ zIndex: 110 }}>
           <div className="bg-[#24293f] border border-[#3b4363] p-6 rounded-3xl w-full max-w-sm text-center animate-in zoom-in-95">
@@ -432,6 +480,7 @@ function ShiftApp({ onBack }) {
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [isHistoryUnlocked, setIsHistoryUnlocked] = useState(false);
   const [pin, setPin] = useState('');
+  const [isVerifying, setIsVerifying] = useState(false);
   const ADMIN_PIN = '5930'; 
 
   const [staffViewShiftId, setStaffViewShiftId] = useState(null);
@@ -465,7 +514,7 @@ function ShiftApp({ onBack }) {
 
   const showToast = (message, type) => {
     setToast({ show: true, message, type });
-    setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 3000);
+    setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 5000);
   };
 
   const handleLogin = (type) => {
@@ -479,10 +528,32 @@ function ShiftApp({ onBack }) {
   const handleImageUpload = async (e, field, isEditing = false) => {
     const file = e.target.files[0]; if (!file) return;
     try {
+      if (field === 'transferSlipImage') setIsVerifying(true);
+      
       const compressedBase64 = await compressImage(file);
-      if (isEditing) setEditingRecord(prev => ({ ...prev, [field]: compressedBase64 }));
-      else setFormData(prev => ({ ...prev, [field]: compressedBase64 }));
-    } catch (err) { showToast('เกิดข้อผิดพลาดในการแนบไฟล์ภาพ', 'error'); }
+      
+      if (isEditing) {
+         setEditingRecord(prev => ({ ...prev, [field]: compressedBase64 }));
+      } else {
+         setFormData(prev => ({ ...prev, [field]: compressedBase64 }));
+      }
+
+      // ตรวจสอบสลิปอัตโนมัติ
+      if (field === 'transferSlipImage') {
+         const verifyResult = await verifySlipWithAPI(compressedBase64);
+         if (verifyResult.success) {
+            if (isEditing) setEditingRecord(prev => ({ ...prev, transferAmount: verifyResult.amount.toString() }));
+            else setFormData(prev => ({ ...prev, transferAmount: verifyResult.amount.toString() }));
+            showToast(`ตรวจสอบสลิปสำเร็จ! พบยอดเงิน: ${verifyResult.amount} บาท`, 'success');
+         } else {
+            showToast(`⚠️ ${verifyResult.message}`, 'error');
+         }
+      }
+    } catch (err) { 
+       showToast('เกิดข้อผิดพลาดในการแนบไฟล์ภาพ', 'error'); 
+    } finally {
+       if (field === 'transferSlipImage') setIsVerifying(false);
+    }
   };
 
   const addExpense = () => setFormData(prev => ({ ...prev, expenses: [...(prev.expenses || []), { id: Date.now(), type: 'ค่าน้ำแข็ง', detail: '', amount: '', image: null }] }));
@@ -520,7 +591,9 @@ function ShiftApp({ onBack }) {
       showToast(`บันทึกข้อมูลเรียบร้อย`, 'success');
       setFormData({ recordDate: getTodayIso(), shift: 'เช้า', cashierName: '', floatIn: '', actualCash: '', transferAmount: '', transferSlipImage: null, expenses: [], nextFloat: '', overAmount: '', shortAmount: '', notes: '' });
       setStaffViewShiftId(docId); setIsHistoryUnlocked(true); setBranchTab('history');
-    } catch (err) { showToast('การบันทึกข้อมูลล้มเหลว', 'error'); }
+    } catch (err) { 
+      showToast('การบันทึกข้อมูลล้มเหลว: ' + err.message, 'error'); 
+    }
   };
 
   const openEditModal = (record) => {
@@ -624,9 +697,15 @@ function ShiftApp({ onBack }) {
                   <div><label className={labelStyle}>หักเงินทอนกะใหม่</label><input type="number" className={inputStyle} value={editingRecord.nextFloat} onChange={e => setEditingRecord({...editingRecord, nextFloat: e.target.value})} /></div>
                   <div>
                     <label className={labelStyle}>ยอดรับโอน/QR</label><input type="number" className={inputStyle} value={editingRecord.transferAmount} onChange={e => setEditingRecord({...editingRecord, transferAmount: e.target.value})} />
-                    <label className="flex flex-col items-center justify-center w-full h-12 border border-[#3b4363] rounded-lg cursor-pointer hover:bg-[#2d334d] bg-[#1c2135] overflow-hidden relative mt-1">
-                      {editingRecord.transferSlipImage ? <img src={editingRecord.transferSlipImage} className="w-full h-full object-cover opacity-60" /> : <div className="text-slate-500 text-[9px] font-bold">📸 ภาพหลักฐาน</div>}
-                      <input type="file" className="hidden" accept="image/*" onChange={e => handleImageUpload(e, 'transferSlipImage', true)} />
+                    <label className={`flex flex-col items-center justify-center w-full h-12 border rounded-lg cursor-pointer overflow-hidden relative mt-1 transition-all ${isVerifying ? 'border-amber-400 bg-amber-400/10' : 'border-[#3b4363] hover:bg-[#2d334d] bg-[#1c2135]'}`}>
+                      {isVerifying ? (
+                         <Loader2 className="animate-spin text-amber-400" size={16}/>
+                      ) : editingRecord.transferSlipImage ? (
+                         <img src={editingRecord.transferSlipImage} className="w-full h-full object-cover opacity-60" /> 
+                      ) : (
+                         <div className="text-slate-500 text-[9px] font-bold">📸 ภาพหลักฐาน</div>
+                      )}
+                      <input type="file" className="hidden" accept="image/*" onChange={e => handleImageUpload(e, 'transferSlipImage', true)} disabled={isVerifying} />
                     </label>
                   </div>
                 </div>
@@ -734,7 +813,6 @@ function ShiftApp({ onBack }) {
           </div>
         )}
 
-        {/* --- Modal ขยายดูรูปบิล --- */}
         {previewImage && (
           <div className="fixed inset-0 z-[400] bg-black/95 backdrop-blur-sm flex flex-col items-center justify-center p-4 animate-in zoom-in-95">
              <button onClick={() => setPreviewImage(null)} className="absolute top-6 right-6 text-white/50 hover:text-white bg-slate-800/50 p-2 rounded-full"><X size={24} /></button>
@@ -742,7 +820,6 @@ function ShiftApp({ onBack }) {
           </div>
         )}
 
-        {/* --- Dialog ยืนยันรหัส --- */}
         {confirmDialog.show && (
           <div className="absolute inset-0 z-[200] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
             <div className="bg-[#24293f] border border-[#3b4363] rounded-2xl p-6 w-full max-w-sm shadow-2xl text-center">
@@ -766,9 +843,9 @@ function ShiftApp({ onBack }) {
         )}
 
         {toast.show && (
-          <div className={`absolute top-4 left-4 right-4 p-3 rounded-xl shadow-2xl flex items-center z-50 border backdrop-blur-md transition-all ${toast.type === 'success' ? 'bg-emerald-500/90 border-emerald-400 text-white' : 'bg-red-500/90 border-red-400 text-white'}`}>
-            {toast.type === 'success' ? <CheckCircle size={20} className="mr-2" /> : <ShieldAlert size={20} className="mr-2" />}
-            <span className="font-semibold text-sm">{toast.message}</span>
+          <div className={`absolute top-4 left-4 right-4 p-4 rounded-xl shadow-2xl flex items-start z-50 border backdrop-blur-md transition-all ${toast.type === 'success' ? 'bg-emerald-500/95 border-emerald-400 text-white' : 'bg-red-500/95 border-red-400 text-white'}`}>
+            {toast.type === 'success' ? <CheckCircle size={24} className="mr-3 shrink-0" /> : <ShieldAlert size={24} className="mr-3 shrink-0" />}
+            <span className="font-semibold text-sm leading-snug">{toast.message}</span>
           </div>
         )}
 
@@ -834,9 +911,15 @@ function ShiftApp({ onBack }) {
                         <div>
                            <label className={labelStyle}>ยอดเงินรับโอน</label>
                            <input type="number" value={formData.transferAmount} onChange={(e) => setFormData({...formData, transferAmount: e.target.value})} className={inputStyle} placeholder="0" />
-                           <label className="flex flex-col items-center justify-center w-full h-16 border-2 border-dashed border-[#3b4363] rounded-lg cursor-pointer hover:bg-[#2d334d] bg-[#1c2135] overflow-hidden relative mt-2">
-                             {formData.transferSlipImage ? <img src={formData.transferSlipImage} className="w-full h-full object-cover opacity-60" /> : <div className="text-slate-500 text-[10px] font-bold"><ImageIcon size={16} className="mx-auto mb-1 opacity-50"/>แนบภาพหลักฐาน</div>}
-                             <input type="file" className="hidden" accept="image/*" onChange={e => handleImageUpload(e, 'transferSlipImage')} />
+                           <label className={`flex flex-col items-center justify-center w-full h-16 border-2 border-dashed rounded-lg cursor-pointer overflow-hidden relative mt-2 transition-all ${isVerifying ? 'border-amber-400 bg-amber-400/10' : 'border-[#3b4363] hover:bg-[#2d334d] bg-[#1c2135]'}`}>
+                             {isVerifying ? (
+                               <div className="flex flex-col items-center text-amber-400"><Loader2 className="animate-spin mb-1" size={16}/><span className="text-[9px] font-bold">ตรวจสอบ...</span></div>
+                             ) : formData.transferSlipImage ? ( 
+                               <img src={formData.transferSlipImage} className="w-full h-full object-cover opacity-60" /> 
+                             ) : ( 
+                               <div className="text-slate-500 text-[10px] font-bold"><ImageIcon size={16} className="mx-auto mb-1 opacity-50"/>แนบภาพเพื่อตรวจสอบ</div>
+                             )}
+                             <input type="file" className="hidden" accept="image/*" onChange={e => handleImageUpload(e, 'transferSlipImage')} disabled={isVerifying} />
                            </label>
                         </div>
                       </div>
@@ -900,7 +983,6 @@ function ShiftApp({ onBack }) {
                     </div>
                   ) : (
                     <>
-                      {/* 🌟 ถ้าเป็นโหมดแสดงเฉพาะกะที่เพิ่งบันทึก ให้โชว์แถบแจ้งเตือนและปุ่มดูทั้งหมด */}
                       {staffViewShiftId && (
                          <div className="mb-4 bg-[#1c2135] p-3 rounded-xl border border-emerald-500/30 shadow-lg flex justify-between items-center">
                             <span className="text-emerald-400 text-[11px] font-bold flex items-center gap-1"><CheckCircle size={14}/> รายการข้อมูลปัจจุบัน</span>
