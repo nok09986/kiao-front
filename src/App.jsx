@@ -36,7 +36,7 @@ const SLIP2GO_SECRET_KEY = "gaHTLTHzI2ohH5w_YkYhuJrEIyxjZn8WRLtk2GsBM2w=";
 const EXPENSE_TYPES = ['ค่าน้ำแข็ง', 'ค่าพัสดุ', 'เบิกค่าแรง', 'ค่าน้ำผลไม้', 'ค่าถุง', 'อื่นๆ'];
 const SHIFTS = ["เช้า", "บ่าย", "ดึก"];
 
-// ปรับขนาดรูปลงให้พอดี ส่งข้อมูลได้เร็วขึ้นและอ่าน QR ได้แม่นยำ
+// ปรับลดขนาดรูปลง เพื่อให้ส่ง API ได้เร็ว ไม่ค้าง
 const compressImage = (file) => {
   return new Promise((resolve) => {
     const reader = new FileReader();
@@ -46,26 +46,23 @@ const compressImage = (file) => {
       img.src = event.target.result;
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 600; const MAX_HEIGHT = 600;
+        const MAX_WIDTH = 500; const MAX_HEIGHT = 500;
         let width = img.width; let height = img.height;
         if (width > height) { if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
         } else { if (height > MAX_HEIGHT) { width *= MAX_HEIGHT / height; height = MAX_HEIGHT; } }
         canvas.width = width; canvas.height = height;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', 0.6));
+        resolve(canvas.toDataURL('image/jpeg', 0.5)); // บีบคุณภาพให้เบาที่สุด
       };
     };
   });
 };
 
-// 🚀 ฟังก์ชันเรียกใช้ API ตรวจสอบสลิป Slip2Go (ผ่านท่อ Vercel)
+// 🚀 ฟังก์ชันเรียกใช้ API ตรวจสอบสลิป Slip2Go (วิ่งผ่านท่อ Vercel ทะลุการบล็อก)
 const verifySlipWithAPI = async (base64Image) => {
   try {
-    // วิ่งผ่านท่อ Vercel ที่ตั้งค่าไว้ใน vercel.json
-    const targetUrl = '/api/slip2go/verify-slip/qr-base64/info';
-
-    const response = await fetch(targetUrl, {
+    const response = await fetch('/api/slip2go/verify-slip/qr-base64/info', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -78,23 +75,26 @@ const verifySlipWithAPI = async (base64Image) => {
       })
     });
     
-    if (!response.ok) {
-       console.error("API Response Error:", response.status);
-       throw new Error(`HTTP status ${response.status}`);
+    let result;
+    try {
+      result = await response.json();
+    } catch (parseError) {
+      return { success: false, message: 'ระบบท่อส่งข้อมูลกำลังอัปเดต โปรดรอสัก 1-2 นาที' };
     }
 
-    const result = await response.json();
     console.log("Slip2Go Response:", result);
     
+    // ตรวจพบสลิปสำเร็จ
     if (result.code === '200000' || result.data?.amount !== undefined || result.amount !== undefined) {
        const amount = result.data?.amount ?? result.amount ?? result.payload?.amount;
        return { success: true, amount: amount };
     }
     
+    // ตรวจไม่พบ (เช่น ไม่ใช่สลิป)
     return { success: false, message: result.message || "ไม่สามารถอ่านสลิปได้ หรือสลิปไม่ถูกต้อง" };
   } catch (error) {
     console.error("API Catch Error:", error);
-    return { success: false, message: 'ระบบตรวจสลิปขัดข้องชั่วคราว (หรือรอเชื่อมต่อเซิร์ฟเวอร์)' };
+    return { success: false, message: 'การเชื่อมต่อขัดข้อง (อินเทอร์เน็ตอาจมีปัญหา)' };
   }
 };
 
@@ -109,6 +109,8 @@ const formatThaiDate = (isoStr) => {
 const getLocalYMD = (timestamp) => {
   if (!timestamp) return ''; const d = new Date(timestamp); if (isNaN(d.getTime())) return ''; return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 };
+
+const formatNum = (num) => Number(num).toLocaleString('th-TH');
 
 // --- ไอคอนสำหรับระบบยอดโอน ---
 const IconBanknote = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="20" height="12" rx="2" ry="2"></rect><circle cx="12" cy="12" r="2"></circle><path d="M6 12h.01M18 12h.01"></path></svg>;
