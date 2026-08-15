@@ -36,7 +36,7 @@ const SLIP2GO_SECRET_KEY = "gaHTLTHzI2ohH5w_YkYhuJrEIyxjZn8WRLtk2GsBM2w=";
 const EXPENSE_TYPES = ['ค่าน้ำแข็ง', 'ค่าพัสดุ', 'เบิกค่าแรง', 'ค่าน้ำผลไม้', 'ค่าถุง', 'อื่นๆ'];
 const SHIFTS = ["เช้า", "บ่าย", "ดึก"];
 
-// ปรับลดขนาดรูปภาพลง เพื่อให้ส่ง API ได้ลื่นไหลขึ้นและไม่เด้งหลุด
+// 🚀 บีบอัดรูปภาพให้เล็กลงมากๆ เพื่อแก้ปัญหา Payload Too Large
 const compressImage = (file) => {
   return new Promise((resolve) => {
     const reader = new FileReader();
@@ -46,28 +46,32 @@ const compressImage = (file) => {
       img.src = event.target.result;
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 600; const MAX_HEIGHT = 600; // ลดจาก 800 เหลือ 600
+        const MAX_WIDTH = 400; const MAX_HEIGHT = 400; // ลดขนาดเหลือ 400px
         let width = img.width; let height = img.height;
         if (width > height) { if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
         } else { if (height > MAX_HEIGHT) { width *= MAX_HEIGHT / height; height = MAX_HEIGHT; } }
         canvas.width = width; canvas.height = height;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', 0.6));
+        // บีบอัดคุณภาพเหลือ 40% (0.4) เพื่อให้ไฟล์ Base64 เล็กที่สุด แต่มันยังเพียงพอสำหรับอ่าน QR Code
+        resolve(canvas.toDataURL('image/jpeg', 0.4));
       };
     };
   });
 };
 
-// ฟังก์ชันเรียกใช้ API ตรวจสอบสลิป Slip2Go (แบบยิงตรง ไม่ผ่าน Proxy)
+// 🚀 ฟังก์ชันเรียกใช้ API (ใช้ Proxy แก้การบล็อก CORS ของเว็บมือถือ)
 const verifySlipWithAPI = async (base64Image) => {
   try {
     const targetUrl = 'https://connect.slip2go.com/api/verify-slip/qr-base64/info';
+    // ใช้ Proxy ตัวกลางที่รองรับ Headers แบบเต็มรูปแบบ
+    const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(targetUrl);
 
-    const response = await fetch(targetUrl, {
+    const response = await fetch(proxyUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Accept': 'application/json',
         'Authorization': SLIP2GO_SECRET_KEY
       },
       body: JSON.stringify({
@@ -77,25 +81,26 @@ const verifySlipWithAPI = async (base64Image) => {
       })
     });
     
-    // ดักจับ Error กรณีเซิร์ฟเวอร์ตอบกลับมาว่ามีปัญหา (เช่น Payload ใหญ่ไป)
     if (!response.ok) {
        const errData = await response.text();
-       console.error("API Response Error:", response.status, errData);
+       console.error("Proxy/API Response Error:", response.status, errData);
        throw new Error(`HTTP status ${response.status}`);
     }
 
     const result = await response.json();
     console.log("Slip2Go Response:", result);
     
+    // สำเร็จ
     if (result.code === '200000' || result.data?.amount !== undefined || result.amount !== undefined) {
        const amount = result.data?.amount ?? result.amount ?? result.payload?.amount;
        return { success: true, amount: amount };
     }
     
+    // กรณีสลิปปลอม หรือ QR Code อ่านไม่ได้
     return { success: false, message: result.message || "ไม่สามารถอ่านสลิปได้ หรือสลิปไม่ถูกต้อง" };
   } catch (error) {
     console.error("API Catch Error:", error);
-    return { success: false, message: 'การเชื่อมต่อขัดข้อง (อาจเกิดจากขนาดรูปสลิปใหญ่เกินไป หรืออินเทอร์เน็ตสะดุด)' };
+    return { success: false, message: 'ถูกบล็อกการเชื่อมต่อ (CORS) หรือไฟล์ภาพยังใหญ่เกินไป' };
   }
 };
 
@@ -155,7 +160,6 @@ function TransferApp({ onBack }) {
       const compressedBase64 = await compressImage(file); 
       setForm(prev => ({ ...prev, slipImage: compressedBase64 })); 
       
-      // เรียกใช้ API ตรวจสอบสลิป Slip2Go
       const verifyResult = await verifySlipWithAPI(compressedBase64);
       if (verifyResult.success) {
         setForm(prev => ({ ...prev, slipImage: compressedBase64, transfer: verifyResult.amount.toString() }));
@@ -548,7 +552,6 @@ function ShiftApp({ onBack }) {
          setFormData(prev => ({ ...prev, [field]: compressedBase64 }));
       }
 
-      // ตรวจสอบสลิปอัตโนมัติ
       if (field === 'transferSlipImage') {
          const verifyResult = await verifySlipWithAPI(compressedBase64);
          if (verifyResult.success) {
