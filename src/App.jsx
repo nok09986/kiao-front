@@ -28,11 +28,11 @@ try {
 }
 
 // ============================================================================
-// 🔑 SECRET KEY จาก Slip2Go (อัปเดตรหัสใหม่ที่ตรงนี้)
+// 🔑 SECRET KEY จาก Slip2Go
 // ============================================================================
-const RAW_SLIP2GO_KEY = "gaHTLTHzI2ohH5w_YkYhuJrEIyxjZn8WRLtk2GsBM2w="; 
+const RAW_SLIP2GO_KEY = "gaHTLThzI2ohH5w_YkYhuJrEIyxjZn8WRLtk2GsBM2w="; 
 
-// ป้องกันช่องว่างที่ติดมาตอนก๊อปปี้
+// ป้องกันช่องว่าง
 const SLIP2GO_SECRET_KEY = RAW_SLIP2GO_KEY.trim();
 
 // --- ฟังก์ชันเสริมส่วนกลาง ---
@@ -62,14 +62,14 @@ const compressImage = (file) => {
   });
 };
 
-// 🚀 ฟังก์ชันเรียกใช้ API ตรวจสอบสลิป Slip2Go
+// 🚀 ฟังก์ชันเรียกใช้ API ตรวจสอบสลิป Slip2Go (เพิ่ม Bearer ตามเอกสารเป๊ะๆ)
 const verifySlipWithAPI = async (base64Image) => {
   try {
     const response = await fetch('/api/slip2go/verify-slip/qr-base64/info', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': SLIP2GO_SECRET_KEY // ส่งแบบเพียวๆ ตามคู่มือ Slip2Go เป๊ะๆ
+        'Authorization': `Bearer ${SLIP2GO_SECRET_KEY}` // ✅ ใส่ Bearer ตามเอกสาร
       },
       body: JSON.stringify({ payload: { imageBase64: base64Image } })
     });
