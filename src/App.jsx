@@ -28,7 +28,7 @@ try {
 }
 
 // ============================================================================
-// 🔑 ใส่ SECRET KEY จาก Slip2Go
+// 🔑 SECRET KEY จาก Slip2Go
 // ============================================================================
 const SLIP2GO_SECRET_KEY = "gaHTLTHzI2ohH5w_YkYhuJrEIyxjZn8WRLtk2GsBM2w="; 
 
@@ -58,10 +58,13 @@ const compressImage = (file) => {
   });
 };
 
-// ฟังก์ชันเรียกใช้ API ตรวจสอบสลิป Slip2Go
+// ฟังก์ชันเรียกใช้ API ตรวจสอบสลิป Slip2Go (เพิ่มท่อผ่านทาง Proxy แก้ปัญหาการบล็อก CORS)
 const verifySlipWithAPI = async (base64Image) => {
   try {
-    const response = await fetch('https://connect.slip2go.com/api/verify-slip/qr-base64/info', {
+    const targetUrl = 'https://connect.slip2go.com/api/verify-slip/qr-base64/info';
+    const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(targetUrl);
+
+    const response = await fetch(proxyUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -106,10 +109,10 @@ const IconBanknote = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" he
 const IconPieChart = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>;
 
 // ============================================================================
-// 💸 SYSTEM 2: ระบบส่งยอดโอน (เหลือเฉพาะสาขา 2 และ 5)
+// 💸 SYSTEM 2: ระบบส่งยอดโอน (สาขา 2, 5)
 // ============================================================================
 function TransferApp({ onBack }) {
-  const TRANSFER_BRANCHES = [2, 5]; // ✅ ตัดสาขา 3 ออกแล้ว
+  const TRANSFER_BRANCHES = [2, 5]; 
   const [activeTab, setActiveTab] = useState('form');
   const [selectedBranch, setSelectedBranch] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -375,7 +378,6 @@ function TransferApp({ onBack }) {
                       </div>
                     </div>
 
-                    {/* ✅ ปรับเป็น 2 คอลัมน์ (สาขา 2 และ 5) */}
                     <div className="grid grid-cols-2 gap-4">
                       {TRANSFER_BRANCHES.map(b => (
                         <div key={b} className="bg-[#24293f] p-4 rounded-2xl border border-[#3b4363] text-center transition-all hover:border-amber-500/30">
@@ -471,7 +473,7 @@ function TransferApp({ onBack }) {
 }
 
 // ============================================================================
-// 📦 SYSTEM 1: ระบบปิดกะ (ShiftApp) (เหลือเฉพาะสาขา 2 และ 5)
+// 📦 SYSTEM 1: ระบบปิดกะ (ShiftApp)
 // ============================================================================
 function ShiftApp({ onBack }) {
   const [currentView, setCurrentView] = useState('menu'); 
@@ -639,7 +641,7 @@ function ShiftApp({ onBack }) {
 
   const formatNum = (num) => Number(num).toLocaleString('th-TH');
   const getSummaryData = () => {
-    const branches = ['สาขา 2', 'สาขา 5']; // ✅ ตัดสาขา 3 ออกแล้ว
+    const branches = ['สาขา 2', 'สาขา 5']; 
     const shifts = ['เช้า', 'บ่าย', 'ดึก'];
     let grandTotalCash = 0; let grandTotalTransfer = 0;
     const filteredHistory = summaryDate === 'all' ? historyData : historyData.filter(d => d.date === summaryDate);
@@ -851,7 +853,7 @@ function ShiftApp({ onBack }) {
           </div>
         )}
 
-        {/* ================= เมนูหลัก ระบบปิดกะ (เหลือสาขา 2 และ 5) ================= */}
+        {/* ================= เมนูหลัก ระบบปิดกะ ================= */}
         {currentView === 'menu' && (
           <div className="p-5 pb-10">
             <div className="flex flex-col items-center justify-center mt-6 mb-8 relative">
@@ -1047,7 +1049,7 @@ function ShiftApp({ onBack }) {
           </div>
         )}
 
-        {/* ================= สรุปยอดรวม (เหลือเฉพาะสาขา 2 และ 5) ================= */}
+        {/* ================= สรุปยอดรวม ================= */}
         {currentView === 'summary' && (
           <div className="flex flex-col h-full">
             <div className="bg-[#1e2336] p-4 flex items-center border-b border-[#2d334d] sticky top-0 z-10 shadow-lg">
