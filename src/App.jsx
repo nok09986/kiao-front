@@ -28,15 +28,18 @@ try {
 }
 
 // ============================================================================
-// 🔑 SECRET KEY จาก Slip2Go
+// 🔑 SECRET KEY จาก Slip2Go (อัปเดตรหัสใหม่ที่ตรงนี้)
 // ============================================================================
-const SLIP2GO_SECRET_KEY = "gaHTLTHzI2ohH5w_YkYhuJrEIyxjZn8WRLtk2GsBM2w="; 
+const RAW_SLIP2GO_KEY = "gaHTLTHzI2ohH5w_YkYhuJrEIyxjZn8WRLtk2GsBM2w="; 
+
+// ป้องกันช่องว่างที่ติดมาตอนก๊อปปี้
+const SLIP2GO_SECRET_KEY = RAW_SLIP2GO_KEY.trim();
 
 // --- ฟังก์ชันเสริมส่วนกลาง ---
 const EXPENSE_TYPES = ['ค่าน้ำแข็ง', 'ค่าพัสดุ', 'เบิกค่าแรง', 'ค่าน้ำผลไม้', 'ค่าถุง', 'อื่นๆ'];
 const SHIFTS = ["เช้า", "บ่าย", "ดึก"];
 
-// ปรับลดขนาดรูปลง เพื่อให้ส่ง API ได้เร็ว ไม่ค้าง
+// บีบอัดรูปภาพ
 const compressImage = (file) => {
   return new Promise((resolve) => {
     const reader = new FileReader();
@@ -46,55 +49,46 @@ const compressImage = (file) => {
       img.src = event.target.result;
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 500; const MAX_HEIGHT = 500;
+        const MAX_WIDTH = 600; const MAX_HEIGHT = 600;
         let width = img.width; let height = img.height;
         if (width > height) { if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
         } else { if (height > MAX_HEIGHT) { width *= MAX_HEIGHT / height; height = MAX_HEIGHT; } }
         canvas.width = width; canvas.height = height;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', 0.5)); // บีบคุณภาพให้เบาที่สุด
+        resolve(canvas.toDataURL('image/jpeg', 0.5));
       };
     };
   });
 };
 
-// 🚀 ฟังก์ชันเรียกใช้ API ตรวจสอบสลิป Slip2Go (วิ่งผ่านท่อ Vercel ทะลุการบล็อก)
+// 🚀 ฟังก์ชันเรียกใช้ API ตรวจสอบสลิป Slip2Go
 const verifySlipWithAPI = async (base64Image) => {
   try {
     const response = await fetch('/api/slip2go/verify-slip/qr-base64/info', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': SLIP2GO_SECRET_KEY
+        'Authorization': SLIP2GO_SECRET_KEY // ส่งแบบเพียวๆ ตามคู่มือ Slip2Go เป๊ะๆ
       },
-      body: JSON.stringify({
-        payload: {
-          imageBase64: base64Image
-        }
-      })
+      body: JSON.stringify({ payload: { imageBase64: base64Image } })
     });
     
     let result;
     try {
       result = await response.json();
-    } catch (parseError) {
-      return { success: false, message: 'ระบบท่อส่งข้อมูลกำลังอัปเดต โปรดรอสัก 1-2 นาที' };
+    } catch (e) {
+      return { success: false, message: 'ระบบท่อ Vercel กำลังทำงาน โปรดลองใหม่ในอีก 1 นาที' };
     }
-
-    console.log("Slip2Go Response:", result);
     
-    // ตรวจพบสลิปสำเร็จ
     if (result.code === '200000' || result.data?.amount !== undefined || result.amount !== undefined) {
        const amount = result.data?.amount ?? result.amount ?? result.payload?.amount;
        return { success: true, amount: amount };
     }
     
-    // ตรวจไม่พบ (เช่น ไม่ใช่สลิป)
-    return { success: false, message: result.message || "ไม่สามารถอ่านสลิปได้ หรือสลิปไม่ถูกต้อง" };
+    return { success: false, message: result.message || "ไม่สามารถอ่านสลิปได้" };
   } catch (error) {
-    console.error("API Catch Error:", error);
-    return { success: false, message: 'การเชื่อมต่อขัดข้อง (อินเทอร์เน็ตอาจมีปัญหา)' };
+    return { success: false, message: 'การเชื่อมต่อระบบตรวจสลิปล้มเหลว' };
   }
 };
 
@@ -112,7 +106,7 @@ const getLocalYMD = (timestamp) => {
 
 const formatNum = (num) => Number(num).toLocaleString('th-TH');
 
-// --- ไอคอนสำหรับระบบยอดโอน ---
+// --- ไอคอน ---
 const IconBanknote = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="20" height="12" rx="2" ry="2"></rect><circle cx="12" cy="12" r="2"></circle><path d="M6 12h.01M18 12h.01"></path></svg>;
 const IconPieChart = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>;
 
@@ -154,17 +148,18 @@ function TransferApp({ onBack }) {
     try { 
       setIsVerifying(true);
       const compressedBase64 = await compressImage(file); 
+      // แนบภาพเข้าระบบทันที ไม่ว่าจะตรวจผ่านหรือไม่ก็ตาม
       setForm(prev => ({ ...prev, slipImage: compressedBase64 })); 
       
       const verifyResult = await verifySlipWithAPI(compressedBase64);
       if (verifyResult.success) {
-        setForm(prev => ({ ...prev, slipImage: compressedBase64, transfer: verifyResult.amount.toString() }));
+        setForm(prev => ({ ...prev, transfer: verifyResult.amount.toString() }));
         alert(`✅ ตรวจสอบสลิปสำเร็จ! ยอดเงิน: ${verifyResult.amount} บาท`);
       } else {
-        alert(`⚠️ ${verifyResult.message}\n(สามารถพิมพ์ระบุยอดเงินด้วยตนเองได้)`);
+        alert(`⚠️ ${verifyResult.message}\n(แนบภาพสำเร็จแล้ว กรุณาพิมพ์ระบุยอดเงินด้วยตนเอง)`);
       }
     } catch (err) {
-      console.error(err);
+      alert(`⚠️ เกิดข้อผิดพลาดในการตรวจสอบสลิป กรุณาพิมพ์ระบุยอดเงินเอง`);
     } finally {
       setIsVerifying(false);
     }
@@ -186,7 +181,6 @@ function TransferApp({ onBack }) {
       alert("✅ บันทึกข้อมูลยอดโอนสำเร็จ"); setActiveTab('history');
     } catch (err) { 
       alert("❌ เกิดข้อผิดพลาดจากระบบ: " + err.message);
-      console.error(err); 
     } finally { setLoading(false); }
   };
 
@@ -211,7 +205,6 @@ function TransferApp({ onBack }) {
       alert("✅ อัปเดตข้อมูลยอดโอนสำเร็จ"); setActiveTab('history');
     } catch (err) { 
       alert("❌ เกิดข้อผิดพลาดจากระบบ: " + err.message);
-      console.error(err); 
     } finally { setLoading(false); }
   };
 
@@ -295,7 +288,7 @@ function TransferApp({ onBack }) {
                <div><label className="text-[11px] font-bold text-slate-400 block mb-1">🕒 เวลาตามหลักฐานโอน</label><input type="time" value={form.slipTime} onChange={e => setForm({...form, slipTime: e.target.value})} className="w-full p-3 bg-[#24293f] rounded-xl border border-[#3b4363] text-white outline-none font-bold focus:border-amber-400" required /></div>
             </div>
             <div>
-               <label className="text-[11px] font-bold text-slate-400 block mb-1">📸 ภาพหลักฐานการโอนเงิน (ระบบตรวจอัตโนมัติ)</label>
+               <label className="text-[11px] font-bold text-slate-400 block mb-1">📸 ภาพหลักฐานการโอนเงิน</label>
                <label className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed ${isVerifying ? 'border-amber-400 bg-amber-400/10' : 'border-[#3b4363] bg-[#24293f] hover:bg-[#2d334d]'} rounded-2xl cursor-pointer overflow-hidden relative transition-all`}>
                   {isVerifying ? (
                      <div className="flex flex-col items-center justify-center text-amber-400"><Loader2 className="animate-spin mb-2" size={24}/><p className="text-[10px] font-bold">กำลังตรวจสอบสลิป...</p></div>
@@ -542,6 +535,7 @@ function ShiftApp({ onBack }) {
       
       const compressedBase64 = await compressImage(file);
       
+      // แนบภาพเข้าระบบทันที ไม่ว่าจะตรวจผ่านหรือไม่
       if (isEditing) {
          setEditingRecord(prev => ({ ...prev, [field]: compressedBase64 }));
       } else {
@@ -555,11 +549,11 @@ function ShiftApp({ onBack }) {
             else setFormData(prev => ({ ...prev, transferAmount: verifyResult.amount.toString() }));
             showToast(`ตรวจสอบสลิปสำเร็จ! พบยอดเงิน: ${verifyResult.amount} บาท`, 'success');
          } else {
-            showToast(`⚠️ ${verifyResult.message}`, 'error');
+            showToast(`⚠️ ${verifyResult.message} (กรุณาระบุยอดเงินเอง)`, 'error');
          }
       }
     } catch (err) { 
-       showToast('เกิดข้อผิดพลาดในการแนบไฟล์ภาพ', 'error'); 
+       showToast('เกิดข้อผิดพลาดในการตรวจสอบสลิป กรุณาระบุยอดเงินเอง', 'error'); 
     } finally {
        if (field === 'transferSlipImage') setIsVerifying(false);
     }
@@ -645,7 +639,6 @@ function ShiftApp({ onBack }) {
     });
   };
 
-  const formatNum = (num) => Number(num).toLocaleString('th-TH');
   const getSummaryData = () => {
     const branches = ['สาขา 2', 'สาขา 5']; 
     const shifts = ['เช้า', 'บ่าย', 'ดึก'];
