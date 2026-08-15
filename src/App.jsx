@@ -36,6 +36,7 @@ const SLIP2GO_SECRET_KEY = "gaHTLTHzI2ohH5w_YkYhuJrEIyxjZn8WRLtk2GsBM2w=";
 const EXPENSE_TYPES = ['ค่าน้ำแข็ง', 'ค่าพัสดุ', 'เบิกค่าแรง', 'ค่าน้ำผลไม้', 'ค่าถุง', 'อื่นๆ'];
 const SHIFTS = ["เช้า", "บ่าย", "ดึก"];
 
+// ปรับลดขนาดรูปภาพลง เพื่อให้ส่ง API ได้ลื่นไหลขึ้นและไม่เด้งหลุด
 const compressImage = (file) => {
   return new Promise((resolve) => {
     const reader = new FileReader();
@@ -45,7 +46,7 @@ const compressImage = (file) => {
       img.src = event.target.result;
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 800; const MAX_HEIGHT = 800;
+        const MAX_WIDTH = 600; const MAX_HEIGHT = 600; // ลดจาก 800 เหลือ 600
         let width = img.width; let height = img.height;
         if (width > height) { if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
         } else { if (height > MAX_HEIGHT) { width *= MAX_HEIGHT / height; height = MAX_HEIGHT; } }
@@ -58,13 +59,12 @@ const compressImage = (file) => {
   });
 };
 
-// ฟังก์ชันเรียกใช้ API ตรวจสอบสลิป Slip2Go (เพิ่มท่อผ่านทาง Proxy แก้ปัญหาการบล็อก CORS)
+// ฟังก์ชันเรียกใช้ API ตรวจสอบสลิป Slip2Go (แบบยิงตรง ไม่ผ่าน Proxy)
 const verifySlipWithAPI = async (base64Image) => {
   try {
     const targetUrl = 'https://connect.slip2go.com/api/verify-slip/qr-base64/info';
-    const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(targetUrl);
 
-    const response = await fetch(proxyUrl, {
+    const response = await fetch(targetUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -77,6 +77,13 @@ const verifySlipWithAPI = async (base64Image) => {
       })
     });
     
+    // ดักจับ Error กรณีเซิร์ฟเวอร์ตอบกลับมาว่ามีปัญหา (เช่น Payload ใหญ่ไป)
+    if (!response.ok) {
+       const errData = await response.text();
+       console.error("API Response Error:", response.status, errData);
+       throw new Error(`HTTP status ${response.status}`);
+    }
+
     const result = await response.json();
     console.log("Slip2Go Response:", result);
     
@@ -87,8 +94,8 @@ const verifySlipWithAPI = async (base64Image) => {
     
     return { success: false, message: result.message || "ไม่สามารถอ่านสลิปได้ หรือสลิปไม่ถูกต้อง" };
   } catch (error) {
-    console.error("API Error:", error);
-    return { success: false, message: 'การเชื่อมต่อระบบตรวจสอบสลิปล้มเหลว' };
+    console.error("API Catch Error:", error);
+    return { success: false, message: 'การเชื่อมต่อขัดข้อง (อาจเกิดจากขนาดรูปสลิปใหญ่เกินไป หรืออินเทอร์เน็ตสะดุด)' };
   }
 };
 
