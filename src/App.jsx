@@ -28,7 +28,7 @@ try {
 }
 
 // ============================================================================
-// 🔑 ใส่ SECRET KEY จาก Slip2Go เรียบร้อยแล้ว
+// 🔑 ใส่ SECRET KEY จาก Slip2Go
 // ============================================================================
 const SLIP2GO_SECRET_KEY = "gaHTLTHzI2ohH5w_YkYhuJrEIyxjZn8WRLtk2GsBM2w="; 
 
@@ -106,10 +106,10 @@ const IconBanknote = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" he
 const IconPieChart = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>;
 
 // ============================================================================
-// 💸 SYSTEM 2: ระบบส่งยอดโอน 
+// 💸 SYSTEM 2: ระบบส่งยอดโอน (เหลือเฉพาะสาขา 2 และ 5)
 // ============================================================================
 function TransferApp({ onBack }) {
-  const TRANSFER_BRANCHES = [2, 3, 5]; 
+  const TRANSFER_BRANCHES = [2, 5]; // ✅ ตัดสาขา 3 ออกแล้ว
   const [activeTab, setActiveTab] = useState('form');
   const [selectedBranch, setSelectedBranch] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -225,7 +225,7 @@ function TransferApp({ onBack }) {
 
   if (!selectedBranch) {
     return (
-      <div className="min-h-screen bg-[#111526] flex items-center justify-center p-6 animate-in fade-in"><div className="bg-[#1e2336] p-8 rounded-[3rem] shadow-xl w-full max-w-sm text-center relative border border-[#3b4363]"><button onClick={onBack} className="absolute top-6 left-6 text-slate-400 hover:text-white"><ChevronLeft size={24}/></button><div className="w-20 h-20 bg-amber-500/20 text-amber-400 rounded-full flex items-center justify-center mx-auto mb-6"><IconBanknote /></div><h2 className="text-2xl font-bold mb-2 text-white">ระบบบันทึกยอดโอน</h2><p className="text-sm text-slate-400 mb-8">กรุณาเลือกสาขาที่ต้องการดำเนินการ</p><div className="flex justify-center gap-3">{TRANSFER_BRANCHES.map(n => <button key={n} onClick={() => setSelectedBranch(n.toString())} className="flex-1 py-4 border border-[#3b4363] bg-[#24293f] text-white rounded-2xl font-bold hover:border-amber-400 active:scale-95 transition-all">สาขา {n}</button>)}</div></div></div>
+      <div className="min-h-screen bg-[#111526] flex items-center justify-center p-6 animate-in fade-in"><div className="bg-[#1e2336] p-8 rounded-[3rem] shadow-xl w-full max-w-sm text-center relative border border-[#3b4363]"><button onClick={onBack} className="absolute top-6 left-6 text-slate-400 hover:text-white"><ChevronLeft size={24}/></button><div className="w-20 h-20 bg-amber-500/20 text-amber-400 rounded-full flex items-center justify-center mx-auto mb-6"><IconBanknote /></div><h2 className="text-2xl font-bold mb-2 text-white">ระบบบันทึกยอดโอน</h2><p className="text-sm text-slate-400 mb-8">กรุณาเลือกสาขาที่ต้องการดำเนินการ</p><div className="flex justify-center gap-4">{TRANSFER_BRANCHES.map(n => <button key={n} onClick={() => setSelectedBranch(n.toString())} className="flex-1 py-4 border border-[#3b4363] bg-[#24293f] text-white rounded-2xl font-bold hover:border-amber-400 active:scale-95 transition-all text-base">สาขา {n}</button>)}</div></div></div>
     );
   }
 
@@ -314,7 +314,7 @@ function TransferApp({ onBack }) {
           </div>
         )}
 
-        {/* ✅ Dashboard */}
+        {/* ✅ Dashboard (แสดงเฉพาะ สาขา 2 และ สาขา 5) */}
         {activeTab === 'dashboard' && isOwnerUnlocked && (
           <div className="space-y-6 animate-in fade-in duration-500">
             <div className="bg-[#1e2336] p-4 rounded-2xl shadow-sm border border-[#3b4363] flex gap-3">
@@ -375,16 +375,17 @@ function TransferApp({ onBack }) {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-3">
+                    {/* ✅ ปรับเป็น 2 คอลัมน์ (สาขา 2 และ 5) */}
+                    <div className="grid grid-cols-2 gap-4">
                       {TRANSFER_BRANCHES.map(b => (
                         <div key={b} className="bg-[#24293f] p-4 rounded-2xl border border-[#3b4363] text-center transition-all hover:border-amber-500/30">
-                          <div className="text-[10px] font-black text-slate-500 mb-2 uppercase tracking-widest flex justify-center items-center gap-1">
-                            <Store size={10} className="text-slate-600"/> สาขา {b}
+                          <div className="text-[11px] font-black text-slate-400 mb-2 uppercase tracking-widest flex justify-center items-center gap-1.5">
+                            <Store size={14} className="text-slate-500"/> สาขา {b}
                           </div>
-                          <div className={`text-base font-black ${sData.branches[b] > 0 ? 'text-amber-400' : 'text-slate-700'}`}>
+                          <div className={`text-lg font-black ${sData.branches[b] > 0 ? 'text-amber-400' : 'text-slate-700'}`}>
                             {sData.branches[b].toLocaleString()}
                           </div>
-                          <div className="text-[8px] text-slate-600 font-bold mt-1 uppercase">THB</div>
+                          <div className="text-[9px] text-slate-500 font-bold mt-1 uppercase">THB</div>
                         </div>
                       ))}
                     </div>
@@ -470,7 +471,7 @@ function TransferApp({ onBack }) {
 }
 
 // ============================================================================
-// 📦 SYSTEM 1: ระบบปิดกะ (ShiftApp)
+// 📦 SYSTEM 1: ระบบปิดกะ (ShiftApp) (เหลือเฉพาะสาขา 2 และ 5)
 // ============================================================================
 function ShiftApp({ onBack }) {
   const [currentView, setCurrentView] = useState('menu'); 
@@ -638,7 +639,8 @@ function ShiftApp({ onBack }) {
 
   const formatNum = (num) => Number(num).toLocaleString('th-TH');
   const getSummaryData = () => {
-    const branches = ['สาขา 2', 'สาขา 3', 'สาขา 5']; const shifts = ['เช้า', 'บ่าย', 'ดึก'];
+    const branches = ['สาขา 2', 'สาขา 5']; // ✅ ตัดสาขา 3 ออกแล้ว
+    const shifts = ['เช้า', 'บ่าย', 'ดึก'];
     let grandTotalCash = 0; let grandTotalTransfer = 0;
     const filteredHistory = summaryDate === 'all' ? historyData : historyData.filter(d => d.date === summaryDate);
     const groupedData = branches.map(branchName => {
@@ -849,7 +851,7 @@ function ShiftApp({ onBack }) {
           </div>
         )}
 
-        {/* ================= เมนูหลัก ระบบปิดกะ ================= */}
+        {/* ================= เมนูหลัก ระบบปิดกะ (เหลือสาขา 2 และ 5) ================= */}
         {currentView === 'menu' && (
           <div className="p-5 pb-10">
             <div className="flex flex-col items-center justify-center mt-6 mb-8 relative">
@@ -858,9 +860,8 @@ function ShiftApp({ onBack }) {
               <h1 className="text-2xl font-black text-[#fcd34d] tracking-wider">ระบบบันทึกปิดกะ</h1>
               <p className="text-[10px] text-slate-400 tracking-[0.2em] mt-1 uppercase">Shift Management System</p>
             </div>
-            <div className="space-y-1">
+            <div className="space-y-2">
               <MenuButton title="ปิดกะสาขา 2" subtitle="บันทึกข้อมูลปิดยอด / ตรวจสอบประวัติ" icon={Store} bgClass="bg-gradient-to-r from-[#884fff] to-[#713be5]" onClick={() => handleEnterBranch('สาขา 2')} />
-              <MenuButton title="ปิดกะสาขา 3" subtitle="บันทึกข้อมูลปิดยอด / ตรวจสอบประวัติ" icon={Store} bgClass="bg-gradient-to-r from-[#f03b4b] to-[#d62837]" onClick={() => handleEnterBranch('สาขา 3')} />
               <MenuButton title="ปิดกะสาขา 5" subtitle="บันทึกข้อมูลปิดยอด / ตรวจสอบประวัติ" icon={Store} bgClass="bg-gradient-to-r from-[#0ea5e9] to-[#0284c7]" onClick={() => handleEnterBranch('สาขา 5')} />
               <div className="pt-4 mt-4 border-t border-[#2d334d]"></div>
               <button onClick={() => setCurrentView('summary')} className="w-full rounded-[16px] bg-[#2b3040] border border-[#3b4363] p-4 flex items-center justify-center active:scale-95 shadow-lg hover:bg-[#32384a] transition-colors">
@@ -1046,7 +1047,7 @@ function ShiftApp({ onBack }) {
           </div>
         )}
 
-        {/* ================= สรุปยอดรวม ================= */}
+        {/* ================= สรุปยอดรวม (เหลือเฉพาะสาขา 2 และ 5) ================= */}
         {currentView === 'summary' && (
           <div className="flex flex-col h-full">
             <div className="bg-[#1e2336] p-4 flex items-center border-b border-[#2d334d] sticky top-0 z-10 shadow-lg">
