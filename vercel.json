@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/slip2go/:path*",
+      "destination": "https://connect.slip2go.com/api/:path*"
+    }
+  ]
+}
