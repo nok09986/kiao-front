@@ -36,7 +36,7 @@ const SLIP2GO_SECRET_KEY = "gaHTLTHzI2ohH5w_YkYhuJrEIyxjZn8WRLtk2GsBM2w=";
 const EXPENSE_TYPES = ['ค่าน้ำแข็ง', 'ค่าพัสดุ', 'เบิกค่าแรง', 'ค่าน้ำผลไม้', 'ค่าถุง', 'อื่นๆ'];
 const SHIFTS = ["เช้า", "บ่าย", "ดึก"];
 
-// 🚀 บีบอัดรูปภาพให้เล็กลงมากๆ เพื่อแก้ปัญหา Payload Too Large
+// ปรับขนาดรูปลงให้พอดี ส่งข้อมูลได้เร็วขึ้นและอ่าน QR ได้แม่นยำ
 const compressImage = (file) => {
   return new Promise((resolve) => {
     const reader = new FileReader();
@@ -46,32 +46,29 @@ const compressImage = (file) => {
       img.src = event.target.result;
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 400; const MAX_HEIGHT = 400; // ลดขนาดเหลือ 400px
+        const MAX_WIDTH = 600; const MAX_HEIGHT = 600;
         let width = img.width; let height = img.height;
         if (width > height) { if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
         } else { if (height > MAX_HEIGHT) { width *= MAX_HEIGHT / height; height = MAX_HEIGHT; } }
         canvas.width = width; canvas.height = height;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
-        // บีบอัดคุณภาพเหลือ 40% (0.4) เพื่อให้ไฟล์ Base64 เล็กที่สุด แต่มันยังเพียงพอสำหรับอ่าน QR Code
-        resolve(canvas.toDataURL('image/jpeg', 0.4));
+        resolve(canvas.toDataURL('image/jpeg', 0.6));
       };
     };
   });
 };
 
-// 🚀 ฟังก์ชันเรียกใช้ API (ใช้ Proxy แก้การบล็อก CORS ของเว็บมือถือ)
+// 🚀 ฟังก์ชันเรียกใช้ API ตรวจสอบสลิป Slip2Go (ผ่านท่อ Vercel)
 const verifySlipWithAPI = async (base64Image) => {
   try {
-    const targetUrl = 'https://connect.slip2go.com/api/verify-slip/qr-base64/info';
-    // ใช้ Proxy ตัวกลางที่รองรับ Headers แบบเต็มรูปแบบ
-    const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(targetUrl);
+    // วิ่งผ่านท่อ Vercel ที่ตั้งค่าไว้ใน vercel.json
+    const targetUrl = '/api/slip2go/verify-slip/qr-base64/info';
 
-    const response = await fetch(proxyUrl, {
+    const response = await fetch(targetUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Accept': 'application/json',
         'Authorization': SLIP2GO_SECRET_KEY
       },
       body: JSON.stringify({
@@ -82,25 +79,22 @@ const verifySlipWithAPI = async (base64Image) => {
     });
     
     if (!response.ok) {
-       const errData = await response.text();
-       console.error("Proxy/API Response Error:", response.status, errData);
+       console.error("API Response Error:", response.status);
        throw new Error(`HTTP status ${response.status}`);
     }
 
     const result = await response.json();
     console.log("Slip2Go Response:", result);
     
-    // สำเร็จ
     if (result.code === '200000' || result.data?.amount !== undefined || result.amount !== undefined) {
        const amount = result.data?.amount ?? result.amount ?? result.payload?.amount;
        return { success: true, amount: amount };
     }
     
-    // กรณีสลิปปลอม หรือ QR Code อ่านไม่ได้
     return { success: false, message: result.message || "ไม่สามารถอ่านสลิปได้ หรือสลิปไม่ถูกต้อง" };
   } catch (error) {
     console.error("API Catch Error:", error);
-    return { success: false, message: 'ถูกบล็อกการเชื่อมต่อ (CORS) หรือไฟล์ภาพยังใหญ่เกินไป' };
+    return { success: false, message: 'ระบบตรวจสลิปขัดข้องชั่วคราว (หรือรอเชื่อมต่อเซิร์ฟเวอร์)' };
   }
 };
 
