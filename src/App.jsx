@@ -28,7 +28,7 @@ try {
 }
 
 // ============================================================================
-// 🔑 ใส่รหัส SECRET KEY ของทั้ง 2 สาขา (ตรวจสอบแล้ว)
+// 🔑 รหัส SECRET KEY ของทั้ง 2 สาขา (ฝังให้เรียบร้อยแล้ว)
 // ============================================================================
 const SLIP2GO_KEY_BRANCH_2 = "gaHTLTHzI2ohH5w_YkYhuJrEIyxjZn8WRLtk2GsBM2w=";  
 const SLIP2GO_KEY_BRANCH_5 = "NbwWJ+RBLNY2EDunM9J1zZvPcva0EbArjIOh+bhpYo8=";  
@@ -63,7 +63,6 @@ const compressImage = (file) => {
 // 🚀 ฟังก์ชัน API ตรวจสลิป (แยกรหัส 2 สาขาอัตโนมัติ)
 const verifySlipWithAPI = async (base64Image, branchName) => {
   try {
-    // แยกรหัส API ตามสาขา
     const isBranch5 = branchName && branchName.toString().includes('5');
     const activeSecretKey = isBranch5 ? SLIP2GO_KEY_BRANCH_5.trim() : SLIP2GO_KEY_BRANCH_2.trim();
 
@@ -87,7 +86,6 @@ const verifySlipWithAPI = async (base64Image, branchName) => {
       return { success: false, message: 'ระบบเซิร์ฟเวอร์ตอบกลับผิดพลาด (โปรดระบุยอดเงินเอง)' };
     }
     
-    // ตรวจสอบข้อมูลจาก Slip2Go
     if (result.code === '200000' || result.data?.amount !== undefined || result.amount !== undefined) {
        const amount = result.data?.amount ?? result.amount ?? result.payload?.amount;
        return { success: true, amount: amount };
@@ -114,11 +112,11 @@ const getLocalYMD = (timestamp) => {
 const formatNum = (num) => Number(num).toLocaleString('th-TH');
 
 // ============================================================================
-// 💸 SYSTEM 2: ระบบเช็คยอดโอนแบบใหม่ (Transfer App Redesigned)
+// 💸 SYSTEM 2: ระบบเช็คยอดโอน (มีระบบสรุปยอดรวม 2 สาขา แบบใส่รหัส)
 // ============================================================================
 function TransferApp({ onBack }) {
   const TRANSFER_BRANCHES = [2, 5]; 
-  const [activeTab, setActiveTab] = useState('form');
+  const [activeTab, setActiveTab] = useState('form'); // form, history, dashboard
   const [selectedBranch, setSelectedBranch] = useState(null);
   const [loading, setLoading] = useState(false);
   const [historyList, setHistoryList] = useState([]);
@@ -128,7 +126,7 @@ function TransferApp({ onBack }) {
   const [submitDate, setSubmitDate] = useState(getTodayIso());
   
   // State การสแกนสลิป
-  const [scanStatus, setScanStatus] = useState('idle'); // idle, scanning, success, error
+  const [scanStatus, setScanStatus] = useState('idle'); 
   const [scanMessage, setScanMessage] = useState('');
   
   const [filterDate, setFilterDate] = useState(getTodayIso());
@@ -152,7 +150,6 @@ function TransferApp({ onBack }) {
       const compressedBase64 = await compressImage(file); 
       setForm(prev => ({ ...prev, slipImage: compressedBase64 })); 
       
-      // ส่งรหัสสาขาไปเพื่อดึง API Key ให้ถูกร้าน
       const verifyResult = await verifySlipWithAPI(compressedBase64, selectedBranch);
       
       if (verifyResult.success) {
@@ -189,6 +186,36 @@ function TransferApp({ onBack }) {
       alert("❌ เกิดข้อผิดพลาดจากระบบ: " + err.message);
     } finally { setLoading(false); }
   };
+
+  // --- คำนวณสรุปยอดรวม (สำหรับแท็บ Dashboard) ---
+  const filteredAllBranches = historyList.filter(r => {
+    if (!r) return false;
+    const rDate = r.submitDate || getLocalYMD(r.createdAt);
+    return rDate === filterDate;
+  });
+
+  let totalTransferredAll = 0;
+  const shiftSummaryDetail = {};
+  
+  SHIFTS.forEach(s => {
+      shiftSummaryDetail[s] = { total: 0, branches: {} };
+      TRANSFER_BRANCHES.forEach(b => { shiftSummaryDetail[s].branches[b] = 0; });
+  });
+
+  filteredAllBranches.forEach(r => {
+      const amt = parseFloat(r?.transfer) || 0;
+      const b = parseInt(r?.branch);
+      const s = r?.shift || 'เช้า';
+      
+      totalTransferredAll += amt;
+      
+      if (shiftSummaryDetail[s]) {
+          shiftSummaryDetail[s].total += amt;
+          if (shiftSummaryDetail[s].branches[b] !== undefined) {
+              shiftSummaryDetail[s].branches[b] += amt;
+          }
+      }
+  });
 
   // --- หน้าแรก: เลือกสาขา ---
   if (!selectedBranch) {
@@ -227,17 +254,18 @@ function TransferApp({ onBack }) {
            <div className="font-black text-white text-lg">สาขา {selectedBranch}</div>
            <div className="text-[10px] text-amber-400 font-bold uppercase tracking-widest">Transfer Check System</div>
         </div>
-        <button onClick={() => {setSelectedBranch(null); setForm({ staff: '', shift: SHIFTS[0], transfer: '', slipTime: '', slipImage: '' }); setScanStatus('idle');}} className="text-[10px] bg-slate-800 border border-slate-700 px-3 py-2 rounded-xl font-bold text-white hover:bg-slate-700">เปลี่ยน</button>
+        <button onClick={() => {setSelectedBranch(null); setForm({ staff: '', shift: SHIFTS[0], transfer: '', slipTime: '', slipImage: '' }); setScanStatus('idle'); setIsOwnerUnlocked(false); setOwnerPin('');}} className="text-[10px] bg-slate-800 border border-slate-700 px-3 py-2 rounded-xl font-bold text-white hover:bg-slate-700">เปลี่ยน</button>
       </header>
 
       <main className="max-w-md mx-auto p-4">
-        {/* แถบเมนู */}
+        {/* แถบเมนู 3 แท็บ */}
         <div className="flex bg-[#1e293b] p-1.5 rounded-2xl border border-slate-700 mb-6 shadow-sm">
-          <button onClick={() => setActiveTab('form')} className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'form' ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-md' : 'text-slate-400'}`}>📝 บันทึกยอด/สแกน</button>
-          <button onClick={() => setActiveTab('history')} className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'history' ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-md' : 'text-slate-400'}`}>📅 ประวัติยอดโอน</button>
+          <button onClick={() => setActiveTab('form')} className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'form' ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}>📝 บันทึก</button>
+          <button onClick={() => setActiveTab('history')} className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'history' ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}>📅 ประวัติ</button>
+          <button onClick={() => setActiveTab('dashboard')} className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'dashboard' ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}>📊 สรุปยอด</button>
         </div>
 
-        {/* --- แท็บฟอร์มบันทึกยอด & สแกนสลิป --- */}
+        {/* --- แท็บที่ 1: ฟอร์มบันทึกยอด & สแกนสลิป --- */}
         {activeTab === 'form' && (
           <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
             
@@ -330,10 +358,9 @@ function TransferApp({ onBack }) {
           </div>
         )}
 
-        {/* --- แท็บประวัติข้อมูล --- */}
+        {/* --- แท็บที่ 2: ประวัติข้อมูล --- */}
         {activeTab === 'history' && (
           <div className="space-y-4 animate-in fade-in slide-in-from-right-4">
-             {/* ตัวกรองวันที่ และ สรุปยอดรวมด้านบน */}
              <div className="bg-[#1e293b] p-5 rounded-3xl shadow-lg border border-slate-700">
                  <label className="text-[10px] font-bold text-slate-400 block mb-2 uppercase tracking-wider">ตรวจสอบประจำวันที่</label>
                  <input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} className="w-full p-3.5 bg-slate-800 border border-slate-700 text-white rounded-xl text-sm font-bold outline-none focus:border-amber-400 transition-colors mb-4" />
@@ -344,7 +371,6 @@ function TransferApp({ onBack }) {
                  </div>
              </div>
 
-             {/* รายการประวัติ */}
              <div className="space-y-3">
                {filteredRecords.length === 0 && <div className="text-center py-10 text-slate-500 font-medium bg-[#1e293b] rounded-3xl border border-dashed border-slate-700">ไม่พบรายการโอนในวันนี้</div>}
                {filteredRecords.map((record) => (
@@ -370,6 +396,71 @@ function TransferApp({ onBack }) {
              </div>
           </div>
         )}
+
+        {/* --- แท็บที่ 3: สรุปยอดรวม 2 สาขา (ใส่รหัส) --- */}
+        {activeTab === 'dashboard' && !isOwnerUnlocked && (
+          <div className="bg-[#1e293b] p-8 rounded-[2rem] shadow-sm border border-slate-700 text-center animate-in zoom-in-95 mt-4">
+             <div className="w-16 h-16 bg-slate-800 border border-slate-600 rounded-full flex items-center justify-center mx-auto mb-4"><Lock size={30} className="text-amber-400" /></div>
+             <h3 className="font-black text-xl text-white mb-2">รายงานสรุปยอดโอนรวม</h3>
+             <p className="text-[11px] text-slate-400 mb-8 font-medium bg-slate-800 p-2 rounded-lg">สงวนสิทธิ์เฉพาะผู้บริหาร<br/>กรุณาระบุรหัสผ่าน (PIN)</p>
+             <input type="password" inputMode="numeric" value={ownerPin} onChange={e => setOwnerPin(e.target.value)} className="w-full p-4 bg-slate-900 border border-slate-600 text-white rounded-xl text-center text-3xl font-black tracking-[0.5em] outline-none mb-6 focus:border-amber-400 transition-all font-mono" placeholder="****" autoFocus maxLength={4} />
+             <button onClick={() => { if(ownerPin === '6969') { setIsOwnerUnlocked(true); setOwnerPin(''); } else { alert('รหัสผ่านไม่ถูกต้อง ❌'); setOwnerPin(''); } }} className="w-full py-4 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white rounded-xl font-black shadow-lg text-sm transition-all flex justify-center items-center active:scale-95"><Unlock size={18} className="mr-2" /> ยืนยันรหัสผ่าน</button>
+          </div>
+        )}
+
+        {activeTab === 'dashboard' && isOwnerUnlocked && (
+          <div className="space-y-5 animate-in fade-in duration-500 slide-in-from-right-4">
+            
+            <div className="bg-[#1e293b] p-4 rounded-2xl shadow-sm border border-slate-700 flex gap-3 items-center">
+              <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">📅 ประจำวันที่:</label>
+              <input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} className="w-full p-2 bg-slate-800 border border-slate-600 text-white rounded-xl text-sm font-bold outline-none focus:border-amber-400 transition-all" />
+            </div>
+
+            <div className="bg-gradient-to-br from-indigo-900 to-[#0f172a] border border-indigo-500/30 text-white p-6 rounded-[2rem] shadow-2xl text-center relative overflow-hidden">
+              <h2 className="text-[10px] font-black tracking-[0.2em] text-indigo-300 uppercase mb-2">ยอดโอนรวม 2 สาขาสุทธิ</h2>
+              <div className="text-4xl font-black tracking-tighter text-amber-400">{formatNum(totalTransferredAll)} <span className="text-lg font-normal text-indigo-300">฿</span></div>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="text-[11px] font-black text-slate-400 px-2 uppercase tracking-[0.2em]">รายละเอียดแยกตามกะ (2 สาขา)</div>
+              
+              {SHIFTS.map(shift => {
+                const sData = shiftSummaryDetail[shift];
+                if (sData.total === 0) return null;
+                
+                return (
+                  <div key={shift} className="bg-[#1e293b] rounded-3xl p-5 shadow-xl border border-slate-700 relative overflow-hidden">
+                    <div className="flex justify-between items-center mb-4 border-b border-slate-700/50 pb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-blue-500/10 rounded-xl flex items-center justify-center border border-blue-500/20"><Clock size={18} className="text-blue-400" /></div>
+                        <div><h4 className="font-black text-white text-lg">กะ{shift}</h4></div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider mb-0.5">รวม 2 สาขา (กะ{shift})</div>
+                        <div className="text-xl font-black text-emerald-400 tracking-tight">{formatNum(sData.total)} <span className="text-xs">฿</span></div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      {TRANSFER_BRANCHES.map(b => (
+                        <div key={b} className="bg-slate-800 p-3 rounded-xl border border-slate-700 text-center flex flex-col justify-center">
+                          <div className="text-[10px] font-bold text-slate-400 mb-1 flex items-center justify-center gap-1"><Store size={12}/> สาขา {b}</div>
+                          <div className={`text-sm font-black ${sData.branches[b] > 0 ? 'text-white' : 'text-slate-600'}`}>{formatNum(sData.branches[b])} ฿</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+              
+              {totalTransferredAll === 0 && (
+                <div className="text-center py-10 bg-[#1e293b] rounded-[2rem] border border-dashed border-slate-700">
+                  <p className="text-xs text-slate-500 font-bold">ไม่พบยอดโอนในวันที่เลือก</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </main>
 
       {/* Popup ดูรูปเต็ม */}
@@ -388,7 +479,7 @@ function TransferApp({ onBack }) {
 }
 
 // ============================================================================
-// 📦 SYSTEM 1: ระบบปิดกะ (ShiftApp) - คงเดิมแต่ปรับให้ส่ง branch ไปเช็คสลิปได้
+// 📦 SYSTEM 1: ระบบปิดกะ (ShiftApp) - โค้ดส่วนที่เหลือคงเดิม
 // ============================================================================
 function ShiftApp({ onBack }) {
   const [currentView, setCurrentView] = useState('menu'); 
