@@ -28,7 +28,7 @@ try {
 }
 
 // ============================================================================
-// 🔑 รหัส SECRET KEY ของทั้ง 2 สาขา (ฝังให้เรียบร้อยแล้ว)
+// 🔑 รหัส SECRET KEY ของทั้ง 2 สาขา (ตรวจสอบแล้ว)
 // ============================================================================
 const SLIP2GO_KEY_BRANCH_2 = "gaHTLTHzI2ohH5w_YkYhuJrEIyxjZn8WRLtk2GsBM2w=";  
 const SLIP2GO_KEY_BRANCH_5 = "NbwWJ+RBLNY2EDunM9J1zZvPcva0EbArjIOh+bhpYo8=";  
@@ -134,6 +134,13 @@ function TransferApp({ onBack }) {
   const [ownerPin, setOwnerPin] = useState('');
   const [previewImage, setPreviewImage] = useState(null);
 
+  // State สำหรับแก้ไขและลบ
+  const [editSession, setEditSession] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
+  const [deletePin, setDeletePin] = useState('');
+  const [isClearingAll, setIsClearingAll] = useState(false);
+  const [clearAllPin, setClearAllPin] = useState('');
+
   useEffect(() => {
     const q = query(collection(db, 'transfer_reports'), orderBy('createdAt', 'desc'), limit(300));
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -185,6 +192,51 @@ function TransferApp({ onBack }) {
     } catch (err) { 
       alert("❌ เกิดข้อผิดพลาดจากระบบ: " + err.message);
     } finally { setLoading(false); }
+  };
+
+  // --- ฟังก์ชันแก้ไขและลบประวัติ ---
+  const openEdit = (record) => {
+    if (!record) return;
+    setEditSession(record);
+    setForm({ staff: record.staff || '', shift: record.shift || SHIFTS[0], transfer: record.transfer ? record.transfer.toString() : '', slipTime: record.slipTime !== '-' ? record.slipTime : '', slipImage: record.slipImage || '' });
+    setSubmitDate(record.submitDate || getLocalYMD(record.createdAt));
+    setActiveTab('form');
+  };
+
+  const saveEdit = async (e) => {
+    e.preventDefault();
+    if (!form.staff) return alert("กรุณาระบุชื่อพนักงาน");
+    setLoading(true);
+    try {
+      await updateDoc(doc(db, 'transfer_reports', editSession.id), {
+        staff: form.staff, shift: form.shift, submitDate, transfer: parseFloat(form.transfer) || 0, 
+        slipTime: form.slipTime || '-', slipImage: form.slipImage, timestamp: new Date().toLocaleString('th-TH') + ' (แก้ไข)'
+      });
+      setEditSession(null); 
+      setForm({ staff: '', shift: SHIFTS[0], transfer: '', slipTime: '', slipImage: '' });
+      alert("✅ อัปเดตข้อมูลยอดโอนสำเร็จ"); 
+      setActiveTab('history');
+    } catch (err) { 
+      alert("❌ เกิดข้อผิดพลาดจากระบบ: " + err.message);
+    } finally { setLoading(false); }
+  };
+
+  const handleDelete = async () => { 
+    if (deletePin !== '0202') return alert("รหัสผ่านไม่ถูกต้อง ไม่อนุญาตให้ดำเนินการลบข้อมูล");
+    try { await deleteDoc(doc(db, 'transfer_reports', deletingId)); } catch (e) {} 
+    setDeletingId(null); setDeletePin('');
+  };
+
+  const handleClearAll = async () => {
+    if (clearAllPin !== '0202') return alert("รหัสผ่านไม่ถูกต้อง");
+    const branchRecords = historyList.filter(r => r && r.branch === selectedBranch);
+    if (branchRecords.length === 0) return alert("ไม่มีข้อมูลในระบบสำหรับการลบ");
+    if (!window.confirm(`ยืนยันการลบประวัติยอดโอนทั้งหมดของสาขา ${selectedBranch} จำนวน ${branchRecords.length} รายการ หรือไม่?`)) return;
+    setLoading(true);
+    try {
+        for (const record of branchRecords) await deleteDoc(doc(db, 'transfer_reports', record.id));
+        alert("ดำเนินการลบประวัติข้อมูลทั้งหมดเรียบร้อยแล้ว");
+    } catch (err) {} finally { setLoading(false); setIsClearingAll(false); setClearAllPin(''); }
   };
 
   // --- คำนวณสรุปยอดรวม (สำหรับแท็บ Dashboard) ---
@@ -272,7 +324,10 @@ function TransferApp({ onBack }) {
             {/* กล่องอัปโหลดสลิป */}
             <div className="bg-[#1e293b] p-5 rounded-3xl shadow-xl border border-slate-700 relative overflow-hidden">
                <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 rounded-bl-full pointer-events-none"></div>
-               <h3 className="text-sm font-black text-amber-400 mb-4 flex items-center gap-2"><ScanLine size={18}/> 1. สแกนสลิปโอนเงิน</h3>
+               <h3 className="text-sm font-black text-amber-400 mb-4 flex items-center gap-2">
+                 {editSession ? <Edit2 size={18}/> : <ScanLine size={18}/>} 
+                 {editSession ? '1. แก้ไขสลิปโอนเงิน' : '1. สแกนสลิปโอนเงิน'}
+               </h3>
                
                <label className={`flex flex-col items-center justify-center w-full h-40 border-2 border-dashed rounded-2xl cursor-pointer overflow-hidden relative transition-all duration-300 ${
                   scanStatus === 'scanning' ? 'border-amber-400 bg-amber-400/5' : 
@@ -318,7 +373,7 @@ function TransferApp({ onBack }) {
             </div>
 
             {/* กล่องข้อมูลอื่นๆ */}
-            <form onSubmit={handleSubmit} className="bg-[#1e293b] p-5 rounded-3xl shadow-xl border border-slate-700 space-y-4 relative">
+            <form onSubmit={editSession ? saveEdit : handleSubmit} className="bg-[#1e293b] p-5 rounded-3xl shadow-xl border border-slate-700 space-y-4 relative">
                <h3 className="text-sm font-black text-white mb-2 flex items-center gap-2"><FileText size={18} className="text-blue-400"/> 2. รายละเอียดการโอน</h3>
                
                <div className="grid grid-cols-2 gap-3">
@@ -350,10 +405,21 @@ function TransferApp({ onBack }) {
                   </div>
                </div>
 
-               <button type="submit" disabled={loading || scanStatus === 'scanning'} className="w-full mt-4 p-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-black shadow-lg hover:shadow-indigo-500/25 active:scale-95 transition-all text-sm flex items-center justify-center gap-2">
-                 {loading ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle size={18} />} 
-                 {loading ? 'กำลังบันทึกข้อมูล...' : 'ยืนยันการบันทึกยอดโอน'}
-               </button>
+               {editSession ? (
+                  <div className="flex gap-3 pt-4">
+                     <button type="button" onClick={() => {setEditSession(null); setForm({ staff: '', shift: SHIFTS[0], transfer: '', slipTime: '', slipImage: '' }); setActiveTab('history');}} className="flex-1 p-4 bg-slate-800 border border-slate-700 text-white rounded-xl font-black transition-all text-sm">
+                        ยกเลิก
+                     </button>
+                     <button type="submit" disabled={loading || scanStatus === 'scanning'} className="flex-1 p-4 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-xl font-black shadow-lg transition-all text-sm">
+                        {loading ? 'กำลังบันทึก...' : 'บันทึกการแก้ไข'}
+                     </button>
+                  </div>
+               ) : (
+                  <button type="submit" disabled={loading || scanStatus === 'scanning'} className="w-full mt-4 p-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-black shadow-lg hover:shadow-indigo-500/25 active:scale-95 transition-all text-sm flex items-center justify-center gap-2">
+                    {loading ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle size={18} />} 
+                    {loading ? 'กำลังบันทึกข้อมูล...' : 'ยืนยันการบันทึกยอดโอน'}
+                  </button>
+               )}
             </form>
           </div>
         )}
@@ -361,6 +427,7 @@ function TransferApp({ onBack }) {
         {/* --- แท็บที่ 2: ประวัติข้อมูล --- */}
         {activeTab === 'history' && (
           <div className="space-y-4 animate-in fade-in slide-in-from-right-4">
+             {/* ตัวกรองวันที่ และ สรุปยอดรวมด้านบน */}
              <div className="bg-[#1e293b] p-5 rounded-3xl shadow-lg border border-slate-700">
                  <label className="text-[10px] font-bold text-slate-400 block mb-2 uppercase tracking-wider">ตรวจสอบประจำวันที่</label>
                  <input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} className="w-full p-3.5 bg-slate-800 border border-slate-700 text-white rounded-xl text-sm font-bold outline-none focus:border-amber-400 transition-colors mb-4" />
@@ -371,6 +438,7 @@ function TransferApp({ onBack }) {
                  </div>
              </div>
 
+             {/* รายการประวัติ */}
              <div className="space-y-3">
                {filteredRecords.length === 0 && <div className="text-center py-10 text-slate-500 font-medium bg-[#1e293b] rounded-3xl border border-dashed border-slate-700">ไม่พบรายการโอนในวันนี้</div>}
                {filteredRecords.map((record) => (
@@ -389,11 +457,24 @@ function TransferApp({ onBack }) {
                           <div className="text-[10px] text-slate-500 shrink-0 font-medium bg-slate-800 px-2 py-0.5 rounded-full">{record?.slipTime}</div>
                         </div>
                         <div className="text-[10px] text-slate-500 mb-2">{record?.submitDate || getLocalYMD(record?.createdAt)}</div>
-                        <div className="font-black text-blue-400 text-lg">{formatNum(record?.transfer)} <span className="text-[10px] font-bold">THB</span></div>
+                        
+                        {/* ส่วนแสดงยอดเงิน และปุ่มแก้ไข/ลบ */}
+                        <div className="flex justify-between items-end">
+                           <div className="font-black text-blue-400 text-lg">{formatNum(record?.transfer)} <span className="text-[10px] font-bold">THB</span></div>
+                           <div className="flex gap-1.5">
+                              <button onClick={() => openEdit(record)} className="p-2 bg-blue-500/10 text-blue-400 rounded-xl hover:bg-blue-500/20 active:scale-95 transition-all"><Edit2 size={16} /></button>
+                              <button onClick={() => setDeletingId(record.id)} className="p-2 bg-rose-500/10 text-rose-400 rounded-xl hover:bg-rose-500/20 active:scale-95 transition-all"><Trash2 size={16} /></button>
+                           </div>
+                        </div>
                      </div>
                   </div>
                 ))}
              </div>
+
+             {/* ปุ่มลบประวัติทั้งหมดของสาขา (อยู่ล่างสุด) */}
+             {historyList.filter(h => h && h.branch === selectedBranch).length > 0 && (
+                <button onClick={() => setIsClearingAll(true)} className="w-full mt-6 p-4 bg-rose-500/10 text-rose-400 rounded-2xl font-bold border border-rose-500/20 hover:bg-rose-500/20 flex items-center justify-center gap-2 active:scale-95 transition-all"><Trash2 size={18} /> ลบประวัติข้อมูลทั้งหมด (สาขา {selectedBranch})</button>
+             )}
           </div>
         )}
 
@@ -471,6 +552,40 @@ function TransferApp({ onBack }) {
         </div>
       )}
       
+      {/* Modal ยืนยันการลบรายการเดี่ยว */}
+      {deletingId && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" style={{ zIndex: 110 }}>
+          <div className="bg-[#1e293b] border border-slate-700 p-8 rounded-3xl w-full max-w-xs text-center">
+            <div className="text-red-400 mb-2 flex justify-center"><Trash2 size={32}/></div>
+            <h4 className="font-bold text-white mb-2">ยืนยันการลบรายการนี้?</h4>
+            <p className="text-[10px] text-red-400 mb-4">* กรุณาระบุรหัสผ่านผู้ดูแลระบบ</p>
+            <input type="password" value={deletePin} onChange={e => setDeletePin(e.target.value)} className="w-full p-3 bg-slate-900 border border-slate-700 text-white rounded-xl text-center font-bold outline-none focus:border-red-400 mb-4 tracking-[0.5em] font-mono" placeholder="****" />
+            <div className="flex gap-2">
+              <button onClick={() => { setDeletingId(null); setDeletePin(''); }} className="flex-1 py-3 bg-slate-800 text-slate-400 rounded-xl font-bold border border-slate-700">ยกเลิก</button>
+              <button onClick={handleDelete} className="flex-1 py-3 bg-red-500 text-white rounded-xl font-bold">ยืนยันการลบ</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal ลบประวัติทั้งหมดของสาขา */}
+      {isClearingAll && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-6" style={{ zIndex: 110 }}>
+          <div className="bg-[#1e293b] border border-slate-700 p-6 rounded-3xl w-full max-w-sm text-center animate-in zoom-in-95">
+            <div className="w-16 h-16 bg-red-500/10 text-red-400 rounded-full flex items-center justify-center mx-auto mb-4 border border-red-500/20"><Trash2 size={24}/></div>
+            <h3 className="font-black text-xl text-white mb-2">ลบประวัติข้อมูลทั้งหมด?</h3>
+            <p className="text-[10px] text-red-400 mb-4 font-bold">* กรุณาระบุรหัสผ่านผู้ดูแลระบบเพื่อยืนยันการลบข้อมูล</p>
+            <div className="bg-slate-900 p-3 rounded-xl mb-4 border border-slate-700">
+               <input type="password" placeholder="****" value={clearAllPin} onChange={e => setClearAllPin(e.target.value)} className="w-full p-3 bg-transparent text-white text-center text-lg font-black outline-none focus:border-red-400 tracking-[0.5em] font-mono" />
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => { setIsClearingAll(false); setClearAllPin(''); }} className="flex-1 py-3 bg-slate-800 text-slate-400 border border-slate-700 rounded-xl font-bold">ยกเลิก</button>
+              <button onClick={handleClearAll} disabled={loading} className="flex-1 py-3 bg-red-500 text-white rounded-xl font-black">{loading ? 'กำลังดำเนินการ...' : 'ยืนยันการลบข้อมูล'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <style dangerouslySetInnerHTML={{__html: `
         @keyframes scan { 0% { top: 0; } 50% { top: 100%; } 100% { top: 0; } }
       `}} />
@@ -1148,7 +1263,7 @@ export default function App() {
            <div className="text-left"><h2 className="text-xl font-black text-white leading-tight mb-1">ระบบเช็คยอดโอน</h2><p className="text-slate-400 text-[10px] font-medium">สแกนสลิปออโต้ / บันทึกประวัติยอดโอน</p></div>
         </button>
       </div>
-      <p className="fixed bottom-4 text-slate-600 text-[9px] font-bold tracking-widest uppercase">Version 3.0 • AI Powered</p>
+      <p className="fixed bottom-4 text-slate-600 text-[9px] font-bold tracking-widest uppercase">Version 3.1 • AI Powered</p>
     </div>
   );
 }
