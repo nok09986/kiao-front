@@ -28,7 +28,7 @@ try {
 }
 
 // ============================================================================
-// 🔑 รหัส SECRET KEY ของทั้ง 2 สาขา (ตรวจสอบแล้ว)
+// 🔑 รหัส SECRET KEY ของทั้ง 2 สาขา
 // ============================================================================
 const SLIP2GO_KEY_BRANCH_2 = "gaHTLTHzI2ohH5w_YkYhuJrEIyxjZn8WRLtk2GsBM2w=";  
 const SLIP2GO_KEY_BRANCH_5 = "NbwWJ+RBLNY2EDunM9J1zZvPcva0EbArjIOh+bhpYo8=";  
@@ -296,7 +296,11 @@ function TransferApp({ onBack }) {
   }
 
   const filteredRecords = historyList.filter(r => r && r.branch === selectedBranch && (r.submitDate === filterDate || (!r.submitDate && getLocalYMD(r.createdAt) === filterDate)));
-  let totalTransferred = filteredRecords.reduce((sum, r) => sum + (parseFloat(r?.transfer) || 0), 0);
+  
+  // จำนวนสลิปแยกตามกะ (สาขานี้)
+  const countMorning = filteredRecords.filter(r => r.shift === 'เช้า').length;
+  const countAfternoon = filteredRecords.filter(r => r.shift === 'บ่าย').length;
+  const countNight = filteredRecords.filter(r => r.shift === 'ดึก').length;
 
   return (
     <div className="min-h-screen bg-[#0f172a] pb-32 font-sans text-slate-200">
@@ -424,17 +428,23 @@ function TransferApp({ onBack }) {
           </div>
         )}
 
-        {/* --- แท็บที่ 2: ประวัติข้อมูล --- */}
+        {/* --- แท็บที่ 2: ประวัติข้อมูล (แสดงเฉพาะจำนวนสลิป ซ่อนยอดรวมเงิน) --- */}
         {activeTab === 'history' && (
           <div className="space-y-4 animate-in fade-in slide-in-from-right-4">
-             {/* ตัวกรองวันที่ และ สรุปยอดรวมด้านบน */}
+             {/* ตัวกรองวันที่ และ สรุปจำนวนสลิปด้านบน */}
              <div className="bg-[#1e293b] p-5 rounded-3xl shadow-lg border border-slate-700">
                  <label className="text-[10px] font-bold text-slate-400 block mb-2 uppercase tracking-wider">ตรวจสอบประจำวันที่</label>
-                 <input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} className="w-full p-3.5 bg-slate-800 border border-slate-700 text-white rounded-xl text-sm font-bold outline-none focus:border-amber-400 transition-colors mb-4" />
+                 <input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} className="w-full p-3.5 bg-slate-800 border border-slate-700 text-white rounded-xl text-sm font-bold outline-none focus:border-blue-400 transition-colors mb-4" />
                  
                  <div className="bg-slate-800 p-4 rounded-2xl border border-slate-700 text-center">
-                    <div className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-1">ยอดรวมประจำวันสาขานี้</div>
-                    <div className="text-2xl font-black text-amber-400">{formatNum(totalTransferred)} <span className="text-sm font-medium">฿</span></div>
+                    <div className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-2">จำนวนสลิปที่บันทึกวันนี้</div>
+                    <div className="text-3xl font-black text-blue-400 mb-3">{filteredRecords.length} <span className="text-sm font-medium text-slate-400">รายการ</span></div>
+                    
+                    <div className="flex justify-center gap-4 text-xs font-bold text-slate-500 bg-slate-900/50 py-2.5 rounded-xl">
+                       <span className={countMorning > 0 ? "text-emerald-400" : ""}>เช้า: {countMorning}</span>
+                       <span className={countAfternoon > 0 ? "text-amber-400" : ""}>บ่าย: {countAfternoon}</span>
+                       <span className={countNight > 0 ? "text-indigo-400" : ""}>ดึก: {countNight}</span>
+                    </div>
                  </div>
              </div>
 
@@ -1263,7 +1273,7 @@ export default function App() {
            <div className="text-left"><h2 className="text-xl font-black text-white leading-tight mb-1">ระบบเช็คยอดโอน</h2><p className="text-slate-400 text-[10px] font-medium">สแกนสลิปออโต้ / บันทึกประวัติยอดโอน</p></div>
         </button>
       </div>
-      <p className="fixed bottom-4 text-slate-600 text-[9px] font-bold tracking-widest uppercase">Version 3.1 • AI Powered</p>
+      <p className="fixed bottom-4 text-slate-600 text-[9px] font-bold tracking-widest uppercase">Version 3.2 • Secure Mode</p>
     </div>
   );
 }
