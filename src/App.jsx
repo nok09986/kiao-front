@@ -1,6 +1,6 @@
 /* eslint-disable */
 import React, { useState, useEffect } from 'react';
-import { Crown, Store, Lock, Unlock, CheckCircle, ShieldAlert, FileText, Search, BarChart2, ChevronLeft, Wallet, User, Calendar, Clock, MapPin, Trash2, Filter, AlertTriangle, Edit2, X, Info, Image as ImageIcon, Plus, Loader2 } from 'lucide-react';
+import { Crown, Store, Lock, Unlock, CheckCircle, ShieldAlert, FileText, Search, BarChart2, ChevronLeft, Wallet, User, Calendar, Clock, MapPin, Trash2, Filter, AlertTriangle, Edit2, X, Info, Image as ImageIcon, Plus, Loader2, ScanLine } from 'lucide-react';
 
 // --- นำเข้า Firebase ---
 import { initializeApp } from 'firebase/app';
@@ -28,12 +28,10 @@ try {
 }
 
 // ============================================================================
-// 🔑 SECRET KEY จาก Slip2Go
+// 🔑 ใส่รหัส SECRET KEY ของทั้ง 2 สาขา (ตรวจสอบแล้ว)
 // ============================================================================
-const RAW_SLIP2GO_KEY = "gaHTLThzI2ohH5w_YkYhuJrEIyxjZn8WRLtk2GsBM2w="; 
-
-// ป้องกันช่องว่าง
-const SLIP2GO_SECRET_KEY = RAW_SLIP2GO_KEY.trim();
+const SLIP2GO_KEY_BRANCH_2 = "gaHTLTHzI2ohH5w_YkYhuJrEIyxjZn8WRLtk2GsBM2w=";  
+const SLIP2GO_KEY_BRANCH_5 = "NbwWJ+RBLNY2EDunM9J1zZvPcva0EbArjIOh+bhpYo8=";  
 
 // --- ฟังก์ชันเสริมส่วนกลาง ---
 const EXPENSE_TYPES = ['ค่าน้ำแข็ง', 'ค่าพัสดุ', 'เบิกค่าแรง', 'ค่าน้ำผลไม้', 'ค่าถุง', 'อื่นๆ'];
@@ -62,14 +60,22 @@ const compressImage = (file) => {
   });
 };
 
-// 🚀 ฟังก์ชันเรียกใช้ API ตรวจสอบสลิป Slip2Go (เพิ่ม Bearer ตามเอกสารเป๊ะๆ)
-const verifySlipWithAPI = async (base64Image) => {
+// 🚀 ฟังก์ชัน API ตรวจสลิป (แยกรหัส 2 สาขาอัตโนมัติ)
+const verifySlipWithAPI = async (base64Image, branchName) => {
   try {
+    // แยกรหัส API ตามสาขา
+    const isBranch5 = branchName && branchName.toString().includes('5');
+    const activeSecretKey = isBranch5 ? SLIP2GO_KEY_BRANCH_5.trim() : SLIP2GO_KEY_BRANCH_2.trim();
+
+    if (!activeSecretKey || activeSecretKey.includes('ใส่รหัส')) {
+        return { success: false, message: 'กรุณาตั้งค่า API Key ในโค้ดก่อนใช้งานสแกนสลิป' };
+    }
+
     const response = await fetch('/api/slip2go/verify-slip/qr-base64/info', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${SLIP2GO_SECRET_KEY}` // ✅ ใส่ Bearer ตามเอกสาร
+        'Authorization': `Bearer ${activeSecretKey}` 
       },
       body: JSON.stringify({ payload: { imageBase64: base64Image } })
     });
@@ -78,17 +84,18 @@ const verifySlipWithAPI = async (base64Image) => {
     try {
       result = await response.json();
     } catch (e) {
-      return { success: false, message: 'ระบบท่อ Vercel กำลังทำงาน โปรดลองใหม่ในอีก 1 นาที' };
+      return { success: false, message: 'ระบบเซิร์ฟเวอร์ตอบกลับผิดพลาด (โปรดระบุยอดเงินเอง)' };
     }
     
+    // ตรวจสอบข้อมูลจาก Slip2Go
     if (result.code === '200000' || result.data?.amount !== undefined || result.amount !== undefined) {
        const amount = result.data?.amount ?? result.amount ?? result.payload?.amount;
        return { success: true, amount: amount };
     }
     
-    return { success: false, message: result.message || "ไม่สามารถอ่านสลิปได้" };
+    return { success: false, message: result.message || "สลิปไม่ถูกต้อง หรือเซิร์ฟเวอร์ไม่พบข้อมูลร้านค้า" };
   } catch (error) {
-    return { success: false, message: 'การเชื่อมต่อระบบตรวจสลิปล้มเหลว' };
+    return { success: false, message: 'การเชื่อมต่อระบบตรวจสลิปล้มเหลว (อาจเกิดจากอินเทอร์เน็ต)' };
   }
 };
 
@@ -106,35 +113,28 @@ const getLocalYMD = (timestamp) => {
 
 const formatNum = (num) => Number(num).toLocaleString('th-TH');
 
-// --- ไอคอน ---
-const IconBanknote = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="20" height="12" rx="2" ry="2"></rect><circle cx="12" cy="12" r="2"></circle><path d="M6 12h.01M18 12h.01"></path></svg>;
-const IconPieChart = () => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>;
-
 // ============================================================================
-// 💸 SYSTEM 2: ระบบส่งยอดโอน (สาขา 2, 5)
+// 💸 SYSTEM 2: ระบบเช็คยอดโอนแบบใหม่ (Transfer App Redesigned)
 // ============================================================================
 function TransferApp({ onBack }) {
   const TRANSFER_BRANCHES = [2, 5]; 
   const [activeTab, setActiveTab] = useState('form');
   const [selectedBranch, setSelectedBranch] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [isVerifying, setIsVerifying] = useState(false);
   const [historyList, setHistoryList] = useState([]);
   
+  // State ของฟอร์ม
   const [form, setForm] = useState({ staff: '', shift: SHIFTS[0], transfer: '', slipTime: '', slipImage: '' });
   const [submitDate, setSubmitDate] = useState(getTodayIso());
-  const [editSession, setEditSession] = useState(null);
-  const [previewImage, setPreviewImage] = useState(null);
   
-  const [deletingId, setDeletingId] = useState(null);
-  const [deletePin, setDeletePin] = useState('');
-  const [isClearingAll, setIsClearingAll] = useState(false);
-  const [clearAllPin, setClearAllPin] = useState('');
-
+  // State การสแกนสลิป
+  const [scanStatus, setScanStatus] = useState('idle'); // idle, scanning, success, error
+  const [scanMessage, setScanMessage] = useState('');
+  
   const [filterDate, setFilterDate] = useState(getTodayIso());
-
   const [isOwnerUnlocked, setIsOwnerUnlocked] = useState(false);
   const [ownerPin, setOwnerPin] = useState('');
+  const [previewImage, setPreviewImage] = useState(null);
 
   useEffect(() => {
     const q = query(collection(db, 'transfer_reports'), orderBy('createdAt', 'desc'), limit(300));
@@ -146,22 +146,26 @@ function TransferApp({ onBack }) {
   const handleImageUpload = async (e) => {
     const file = e.target.files[0]; if (!file) return;
     try { 
-      setIsVerifying(true);
+      setScanStatus('scanning');
+      setScanMessage('กำลังส่งสลิปไปตรวจสอบ...');
+      
       const compressedBase64 = await compressImage(file); 
-      // แนบภาพเข้าระบบทันที ไม่ว่าจะตรวจผ่านหรือไม่ก็ตาม
       setForm(prev => ({ ...prev, slipImage: compressedBase64 })); 
       
-      const verifyResult = await verifySlipWithAPI(compressedBase64);
+      // ส่งรหัสสาขาไปเพื่อดึง API Key ให้ถูกร้าน
+      const verifyResult = await verifySlipWithAPI(compressedBase64, selectedBranch);
+      
       if (verifyResult.success) {
         setForm(prev => ({ ...prev, transfer: verifyResult.amount.toString() }));
-        alert(`✅ ตรวจสอบสลิปสำเร็จ! ยอดเงิน: ${verifyResult.amount} บาท`);
+        setScanStatus('success');
+        setScanMessage(`สแกนสำเร็จ! ยอดเงิน: ${formatNum(verifyResult.amount)} บาท`);
       } else {
-        alert(`⚠️ ${verifyResult.message}\n(แนบภาพสำเร็จแล้ว กรุณาพิมพ์ระบุยอดเงินด้วยตนเอง)`);
+        setScanStatus('error');
+        setScanMessage(verifyResult.message);
       }
     } catch (err) {
-      alert(`⚠️ เกิดข้อผิดพลาดในการตรวจสอบสลิป กรุณาพิมพ์ระบุยอดเงินเอง`);
-    } finally {
-      setIsVerifying(false);
+      setScanStatus('error');
+      setScanMessage('เกิดข้อผิดพลาดจากระบบ กรุณาระบุยอดเงินเอง');
     }
   };
 
@@ -178,302 +182,213 @@ function TransferApp({ onBack }) {
         slipImage: form.slipImage, timestamp: new Date().toLocaleString('th-TH'), createdAt: Date.now()
       });
       setForm({ staff: '', shift: SHIFTS[0], transfer: '', slipTime: '', slipImage: '' });
-      alert("✅ บันทึกข้อมูลยอดโอนสำเร็จ"); setActiveTab('history');
+      setScanStatus('idle');
+      alert("✅ บันทึกยอดโอนสำเร็จ"); 
+      setActiveTab('history');
     } catch (err) { 
       alert("❌ เกิดข้อผิดพลาดจากระบบ: " + err.message);
     } finally { setLoading(false); }
   };
 
-  const openEdit = (record) => {
-    if (!record) return;
-    setEditSession(record);
-    setForm({ staff: record.staff || '', shift: record.shift || SHIFTS[0], transfer: record.transfer ? record.transfer.toString() : '', slipTime: record.slipTime !== '-' ? record.slipTime : '', slipImage: record.slipImage || '' });
-    setSubmitDate(record.submitDate || getLocalYMD(record.createdAt));
-    setActiveTab('form');
-  };
-
-  const saveEdit = async (e) => {
-    e.preventDefault();
-    if (!form.staff) return alert("กรุณาระบุชื่อพนักงาน");
-    setLoading(true);
-    try {
-      await updateDoc(doc(db, 'transfer_reports', editSession.id), {
-        staff: form.staff, shift: form.shift, submitDate, transfer: parseFloat(form.transfer) || 0, 
-        slipTime: form.slipTime || '-', slipImage: form.slipImage, timestamp: new Date().toLocaleString('th-TH') + ' (แก้ไข)'
-      });
-      setEditSession(null); setForm({ staff: '', shift: SHIFTS[0], transfer: '', slipTime: '', slipImage: '' });
-      alert("✅ อัปเดตข้อมูลยอดโอนสำเร็จ"); setActiveTab('history');
-    } catch (err) { 
-      alert("❌ เกิดข้อผิดพลาดจากระบบ: " + err.message);
-    } finally { setLoading(false); }
-  };
-
-  const handleDelete = async () => { 
-    if (deletePin !== '0202') return alert("รหัสผ่านไม่ถูกต้อง ไม่อนุญาตให้ดำเนินการลบข้อมูล");
-    try { await deleteDoc(doc(db, 'transfer_reports', deletingId)); } catch (e) {} 
-    setDeletingId(null); setDeletePin('');
-  };
-
-  const handleClearAll = async () => {
-    if (clearAllPin !== '0202') return alert("รหัสผ่านไม่ถูกต้อง");
-    const branchRecords = historyList.filter(r => r && r.branch === selectedBranch);
-    if (branchRecords.length === 0) return alert("ไม่มีข้อมูลในระบบสำหรับการลบ");
-    if (!window.confirm(`ยืนยันการลบประวัติยอดโอนทั้งหมดของสาขา ${selectedBranch} จำนวน ${branchRecords.length} รายการ หรือไม่?`)) return;
-    setLoading(true);
-    try {
-        for (const record of branchRecords) await deleteDoc(doc(db, 'transfer_reports', record.id));
-        alert("ดำเนินการลบประวัติข้อมูลทั้งหมดเรียบร้อยแล้ว");
-    } catch (err) {} finally { setLoading(false); setIsClearingAll(false); setClearAllPin(''); }
-  };
-
+  // --- หน้าแรก: เลือกสาขา ---
   if (!selectedBranch) {
     return (
-      <div className="min-h-screen bg-[#111526] flex items-center justify-center p-6 animate-in fade-in"><div className="bg-[#1e2336] p-8 rounded-[3rem] shadow-xl w-full max-w-sm text-center relative border border-[#3b4363]"><button onClick={onBack} className="absolute top-6 left-6 text-slate-400 hover:text-white"><ChevronLeft size={24}/></button><div className="w-20 h-20 bg-amber-500/20 text-amber-400 rounded-full flex items-center justify-center mx-auto mb-6"><IconBanknote /></div><h2 className="text-2xl font-bold mb-2 text-white">ระบบบันทึกยอดโอน</h2><p className="text-sm text-slate-400 mb-8">กรุณาเลือกสาขาที่ต้องการดำเนินการ</p><div className="flex justify-center gap-4">{TRANSFER_BRANCHES.map(n => <button key={n} onClick={() => setSelectedBranch(n.toString())} className="flex-1 py-4 border border-[#3b4363] bg-[#24293f] text-white rounded-2xl font-bold hover:border-amber-400 active:scale-95 transition-all text-base">สาขา {n}</button>)}</div></div></div>
+      <div className="min-h-screen bg-[#0f172a] flex items-center justify-center p-6 animate-in fade-in">
+        <div className="bg-[#1e293b] p-8 rounded-[2rem] shadow-2xl w-full max-w-sm text-center border border-slate-700/50 relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-400 to-orange-500"></div>
+          <button onClick={onBack} className="absolute top-6 left-6 text-slate-400 hover:text-white transition-colors"><ChevronLeft size={24}/></button>
+          
+          <div className="w-20 h-20 bg-amber-500/10 rounded-full flex items-center justify-center mx-auto mb-6 border border-amber-500/20">
+            <ScanLine className="text-amber-400 w-10 h-10" />
+          </div>
+          <h2 className="text-2xl font-black text-white mb-2">ระบบเช็คยอดโอน</h2>
+          <p className="text-xs text-slate-400 mb-8 font-medium">กรุณาเลือกสาขาที่ต้องการทำรายการ</p>
+          
+          <div className="space-y-3">
+            {TRANSFER_BRANCHES.map(n => (
+              <button key={n} onClick={() => setSelectedBranch(n.toString())} className="w-full py-4 bg-slate-800 border border-slate-700 text-white rounded-xl font-bold hover:bg-slate-700 hover:border-amber-400 active:scale-95 transition-all flex items-center justify-center gap-3">
+                <Store size={18} className="text-amber-400"/> สาขา {n}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
     );
   }
 
-  const filteredRecords = historyList.filter(r => {
-      if (!r) return false;
-      return r.branch === selectedBranch && (r.submitDate === filterDate || (!r.submitDate && getLocalYMD(r.createdAt) === filterDate));
-  });
-
-  const filteredAllBranches = historyList.filter(r => {
-      if (!r) return false;
-      return r.submitDate === filterDate || (!r.submitDate && getLocalYMD(r.createdAt) === filterDate);
-  });
-  
-  let totalTransferredAll = 0;
-  const shiftSummaryDetail = {};
-  
-  SHIFTS.forEach(s => {
-      shiftSummaryDetail[s] = { total: 0, branches: {} };
-      TRANSFER_BRANCHES.forEach(b => { shiftSummaryDetail[s].branches[b] = 0; });
-  });
-
-  filteredAllBranches.forEach(r => {
-      const amt = parseFloat(r?.transfer) || 0;
-      const b = parseInt(r?.branch);
-      const s = r?.shift || 'เช้า';
-      
-      totalTransferredAll += amt;
-      
-      if (shiftSummaryDetail[s]) {
-          shiftSummaryDetail[s].total += amt;
-          if (shiftSummaryDetail[s].branches[b] !== undefined) {
-              shiftSummaryDetail[s].branches[b] += amt;
-          }
-      }
-  });
+  const filteredRecords = historyList.filter(r => r && r.branch === selectedBranch && (r.submitDate === filterDate || (!r.submitDate && getLocalYMD(r.createdAt) === filterDate)));
+  let totalTransferred = filteredRecords.reduce((sum, r) => sum + (parseFloat(r?.transfer) || 0), 0);
 
   return (
-    <div className="min-h-screen bg-[#111526] pb-32 font-sans text-white">
-      <header className="bg-[#1e2336] text-white p-4 sticky top-0 z-40 shadow-md flex justify-between items-center border-b border-[#3b4363]"><button onClick={onBack} className="p-2 bg-[#24293f] border border-[#3b4363] rounded-xl hover:bg-[#2d334d]"><ChevronLeft size={20}/></button><span className="font-bold">ยอดโอน สาขา {selectedBranch}</span><button onClick={() => {setSelectedBranch(null); setForm({ staff: '', shift: SHIFTS[0], transfer: '', slipTime: '', slipImage: '' }); setEditSession(null); setIsOwnerUnlocked(false);}} className="text-[10px] bg-[#24293f] border border-[#3b4363] px-3 py-1.5 rounded-lg font-bold">เปลี่ยนสาขา</button></header>
+    <div className="min-h-screen bg-[#0f172a] pb-32 font-sans text-slate-200">
+      <header className="bg-[#1e293b] p-4 sticky top-0 z-40 shadow-lg border-b border-slate-700 flex justify-between items-center">
+        <button onClick={onBack} className="p-2 bg-slate-800 border border-slate-700 rounded-xl hover:bg-slate-700 text-white"><ChevronLeft size={20}/></button>
+        <div className="text-center">
+           <div className="font-black text-white text-lg">สาขา {selectedBranch}</div>
+           <div className="text-[10px] text-amber-400 font-bold uppercase tracking-widest">Transfer Check System</div>
+        </div>
+        <button onClick={() => {setSelectedBranch(null); setForm({ staff: '', shift: SHIFTS[0], transfer: '', slipTime: '', slipImage: '' }); setScanStatus('idle');}} className="text-[10px] bg-slate-800 border border-slate-700 px-3 py-2 rounded-xl font-bold text-white hover:bg-slate-700">เปลี่ยน</button>
+      </header>
+
       <main className="max-w-md mx-auto p-4">
-        <div className="flex bg-[#1e2336] p-1.5 rounded-2xl border border-[#3b4363] mb-4 shadow-sm">
-          <button onClick={() => setActiveTab('form')} className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'form' ? 'bg-amber-500 text-white shadow-md' : 'text-slate-400'}`}>📝 บันทึกยอด</button>
-          <button onClick={() => setActiveTab('dashboard')} className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'dashboard' ? 'bg-amber-500 text-white shadow-md' : 'text-slate-400'}`}>📊 รายงานสรุป</button>
-          <button onClick={() => setActiveTab('history')} className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'history' ? 'bg-amber-500 text-white shadow-md' : 'text-slate-400'}`}>📅 ประวัติข้อมูล</button>
+        {/* แถบเมนู */}
+        <div className="flex bg-[#1e293b] p-1.5 rounded-2xl border border-slate-700 mb-6 shadow-sm">
+          <button onClick={() => setActiveTab('form')} className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'form' ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-md' : 'text-slate-400'}`}>📝 บันทึกยอด/สแกน</button>
+          <button onClick={() => setActiveTab('history')} className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'history' ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-md' : 'text-slate-400'}`}>📅 ประวัติยอดโอน</button>
         </div>
 
+        {/* --- แท็บฟอร์มบันทึกยอด & สแกนสลิป --- */}
         {activeTab === 'form' && (
-          <form onSubmit={editSession ? saveEdit : handleSubmit} className="bg-[#1e2336] p-5 rounded-3xl shadow-sm border border-[#3b4363] space-y-4 animate-in fade-in">
-            <h2 className="text-xl font-black text-amber-400 mb-2">{editSession ? '✏️ แก้ไขข้อมูลยอดโอน' : '💰 แบบฟอร์มบันทึกยอดโอน'}</h2>
-            <div className="grid grid-cols-2 gap-3">
-              <div><label className="text-[11px] font-bold text-slate-400 block mb-1">ชื่อพนักงาน</label><input type="text" value={form.staff} onChange={e => setForm({...form, staff: e.target.value})} className="w-full p-3 bg-[#24293f] rounded-xl border border-[#3b4363] text-white outline-none focus:border-amber-400" required /></div>
-              <div><label className="text-[11px] font-bold text-slate-400 block mb-1">กะการทำงาน</label><select value={form.shift} onChange={e => setForm({...form, shift: e.target.value})} className="w-full p-3 bg-[#24293f] rounded-xl border border-[#3b4363] text-white outline-none font-bold focus:border-amber-400">{SHIFTS.map(s => <option key={s} value={s}>{s}</option>)}</select></div>
-            </div>
-            <div><label className="text-[11px] font-bold text-slate-400 block mb-1">วันที่ประจำกะ</label><input type="date" value={submitDate} onChange={e => setSubmitDate(e.target.value)} className="w-full p-3 bg-[#24293f] border border-[#3b4363] text-white rounded-xl text-sm font-bold outline-none focus:border-amber-400" /></div>
-            <div className="grid grid-cols-2 gap-3">
-               <div><label className="text-[11px] font-bold text-blue-400 block mb-1">📱 จำนวนเงินโอน (บาท)</label><input type="number" step="any" value={form.transfer} onChange={e => setForm({...form, transfer: e.target.value})} className="w-full p-3 bg-blue-500/10 rounded-xl border border-blue-500/30 outline-none text-lg font-black text-blue-400 focus:border-blue-400" required /></div>
-               <div><label className="text-[11px] font-bold text-slate-400 block mb-1">🕒 เวลาตามหลักฐานโอน</label><input type="time" value={form.slipTime} onChange={e => setForm({...form, slipTime: e.target.value})} className="w-full p-3 bg-[#24293f] rounded-xl border border-[#3b4363] text-white outline-none font-bold focus:border-amber-400" required /></div>
-            </div>
-            <div>
-               <label className="text-[11px] font-bold text-slate-400 block mb-1">📸 ภาพหลักฐานการโอนเงิน</label>
-               <label className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed ${isVerifying ? 'border-amber-400 bg-amber-400/10' : 'border-[#3b4363] bg-[#24293f] hover:bg-[#2d334d]'} rounded-2xl cursor-pointer overflow-hidden relative transition-all`}>
-                  {isVerifying ? (
-                     <div className="flex flex-col items-center justify-center text-amber-400"><Loader2 className="animate-spin mb-2" size={24}/><p className="text-[10px] font-bold">กำลังตรวจสอบสลิป...</p></div>
-                  ) : form.slipImage ? ( 
-                     <img src={form.slipImage} alt="slip" className="w-full h-full object-contain" /> 
-                  ) : ( 
-                     <div className="flex flex-col items-center justify-center pt-5 pb-6 text-slate-500"><ImageIcon size={24}/><p className="text-[9px] font-bold mt-2">แตะเพื่อแนบภาพ และตรวจสอบสลิป</p></div> 
-                  )}
-                  <input type="file" className="hidden" accept="image/*" onChange={handleImageUpload} disabled={isVerifying} />
-               </label>
-            </div>
-            <div className="pt-2">
-               {editSession ? (<div className="flex gap-2"><button type="button" onClick={() => {setEditSession(null); setForm({ staff: '', shift: SHIFTS[0], transfer: '', slipTime: '', slipImage: '' }); setActiveTab('history');}} className="flex-1 p-4 bg-[#3b4363] text-white rounded-2xl font-black">ยกเลิกการแก้ไข</button><button type="submit" disabled={loading || isVerifying} className="flex-1 p-4 bg-amber-500 text-white rounded-2xl font-black shadow-lg">{loading ? 'กำลังดำเนินการ...' : 'อัปเดตข้อมูล'}</button></div>) : (<button type="submit" disabled={loading || isVerifying} className="w-full p-4 bg-amber-500 text-white rounded-2xl font-black shadow-lg hover:bg-amber-600 text-lg">{loading ? 'กำลังดำเนินการ...' : 'ยืนยันการบันทึกยอดโอน'}</button>)}
-            </div>
-          </form>
-        )}
-        
-        {/* หน้าแดชบอร์ดสรุปยอดรวม */}
-        {activeTab === 'dashboard' && !isOwnerUnlocked && (
-          <div className="bg-[#1e2336] p-8 rounded-3xl shadow-sm border border-[#3b4363] text-center animate-in zoom-in-95">
-             <div className="w-16 h-16 bg-[#24293f] border border-[#3b4363] rounded-full flex items-center justify-center mx-auto mb-4"><Lock size={30} className="text-amber-400" /></div>
-             <h3 className="font-black text-xl text-white mb-2">พื้นที่สำหรับผู้บริหาร</h3>
-             <p className="text-xs text-slate-400 mb-6 font-bold">กรุณาระบุรหัสผ่านเพื่อเข้าถึงรายงานสรุปข้อมูล</p>
-             <input type="password" value={ownerPin} onChange={e => setOwnerPin(e.target.value)} className="w-full p-4 bg-[#1c2135] border border-[#3b4363] text-white rounded-xl text-center text-2xl font-black tracking-[0.5em] outline-none mb-4 focus:border-amber-400 transition-all font-mono" placeholder="****" autoFocus />
-             <button onClick={() => { if(ownerPin === '6969') { setIsOwnerUnlocked(true); setOwnerPin(''); } else { alert('รหัสผ่านไม่ถูกต้อง ❌'); setOwnerPin(''); } }} className="w-full p-4 bg-amber-500 hover:bg-amber-600 text-white rounded-2xl font-black shadow-lg text-lg transition-all flex justify-center items-center"><Unlock size={18} className="mr-2" /> ยืนยันรหัสผ่าน</button>
-          </div>
-        )}
-
-        {/* ✅ Dashboard (แสดงเฉพาะ สาขา 2 และ สาขา 5) */}
-        {activeTab === 'dashboard' && isOwnerUnlocked && (
-          <div className="space-y-6 animate-in fade-in duration-500">
-            <div className="bg-[#1e2336] p-4 rounded-2xl shadow-sm border border-[#3b4363] flex gap-3">
-              <div className="flex-1">
-                <label className="text-[11px] font-bold text-slate-400 block mb-2 uppercase tracking-wider">
-                  📅 ข้อมูลประจำวันที่
-                </label>
-                <input 
-                  type="date" 
-                  value={filterDate} 
-                  onChange={(e) => setFilterDate(e.target.value)} 
-                  className="w-full p-3 bg-[#24293f] border border-[#3b4363] text-white rounded-xl text-sm font-bold outline-none focus:border-amber-400 transition-all" 
-                />
-              </div>
-            </div>
-
-            <div className="bg-gradient-to-br from-[#1e293b] to-[#0f172a] border border-blue-500/30 text-white p-8 rounded-[2.5rem] shadow-2xl text-center relative overflow-hidden">
-              <div className="absolute -right-6 -top-6 opacity-5 transform scale-150">
-                <IconPieChart />
-              </div>
-              <h2 className="text-xs font-black tracking-[0.2em] text-blue-400 uppercase mb-2">
-                ยอดโอนรวมทุกสาขาสุทธิ
-              </h2>
-              <div className="text-4xl font-black tracking-tighter mb-1">
-                {totalTransferredAll.toLocaleString()} <span className="text-lg font-bold text-blue-400">฿</span>
-              </div>
-              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">
-                Total Revenue via Transfer
-              </p>
-            </div>
+          <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
             
-            <div className="space-y-5">
-              <h3 className="text-[11px] font-black text-slate-400 px-2 uppercase tracking-[0.2em]">
-                รายละเอียดแยกตามกะ
-              </h3>
-              
-              {SHIFTS.map(shift => {
-                const sData = shiftSummaryDetail[shift];
-                if (sData.total === 0) return null;
-                
-                return (
-                  <div key={shift} className="bg-[#1e2336] rounded-[2rem] p-6 shadow-xl border border-[#3b4363] relative overflow-hidden animate-in slide-in-from-bottom-2">
-                    <div className="flex justify-between items-center mb-6 border-b border-[#3b4363]/50 pb-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-indigo-500/10 rounded-xl flex items-center justify-center border border-indigo-500/20">
-                          <Clock size={20} className="text-indigo-400" />
+            {/* กล่องอัปโหลดสลิป */}
+            <div className="bg-[#1e293b] p-5 rounded-3xl shadow-xl border border-slate-700 relative overflow-hidden">
+               <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 rounded-bl-full pointer-events-none"></div>
+               <h3 className="text-sm font-black text-amber-400 mb-4 flex items-center gap-2"><ScanLine size={18}/> 1. สแกนสลิปโอนเงิน</h3>
+               
+               <label className={`flex flex-col items-center justify-center w-full h-40 border-2 border-dashed rounded-2xl cursor-pointer overflow-hidden relative transition-all duration-300 ${
+                  scanStatus === 'scanning' ? 'border-amber-400 bg-amber-400/5' : 
+                  scanStatus === 'success' ? 'border-emerald-400 bg-emerald-400/5' :
+                  scanStatus === 'error' ? 'border-rose-400 bg-rose-400/5' :
+                  'border-slate-600 bg-slate-800 hover:bg-slate-700'
+               }`}>
+                  {scanStatus === 'scanning' ? (
+                     <div className="flex flex-col items-center text-amber-400">
+                        <div className="relative">
+                          <ScanLine className="w-12 h-12 animate-pulse mb-2" />
+                          <div className="absolute top-0 left-0 w-full h-0.5 bg-amber-400 animate-[scan_2s_ease-in-out_infinite]"></div>
                         </div>
-                        <div>
-                          <h4 className="font-black text-white text-lg">กะ{shift}</h4>
-                          <p className="text-[9px] text-slate-500 font-bold uppercase tracking-tighter">Shift Summary</p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-[10px] text-slate-400 font-black mb-1 uppercase">รวมยอดกะนี้</div>
-                        <div className="text-xl font-black text-white tracking-tight">
-                          {sData.total.toLocaleString()} <span className="text-sm text-indigo-400">฿</span>
-                        </div>
-                      </div>
-                    </div>
+                        <p className="text-[11px] font-bold mt-2 tracking-wide">{scanMessage}</p>
+                     </div>
+                  ) : form.slipImage ? ( 
+                     <img src={form.slipImage} className="w-full h-full object-contain" /> 
+                  ) : ( 
+                     <div className="flex flex-col items-center text-slate-400">
+                        <div className="w-12 h-12 bg-slate-700 rounded-full flex items-center justify-center mb-2 shadow-inner"><Plus size={24}/></div>
+                        <p className="text-[11px] font-bold">แตะเพื่อแนบสลิป และสแกนยอดเงิน</p>
+                     </div> 
+                  )}
+                  <input type="file" className="hidden" accept="image/*" onChange={handleImageUpload} disabled={scanStatus === 'scanning'} />
+               </label>
 
-                    <div className="grid grid-cols-2 gap-4">
-                      {TRANSFER_BRANCHES.map(b => (
-                        <div key={b} className="bg-[#24293f] p-4 rounded-2xl border border-[#3b4363] text-center transition-all hover:border-amber-500/30">
-                          <div className="text-[11px] font-black text-slate-400 mb-2 uppercase tracking-widest flex justify-center items-center gap-1.5">
-                            <Store size={14} className="text-slate-500"/> สาขา {b}
-                          </div>
-                          <div className={`text-lg font-black ${sData.branches[b] > 0 ? 'text-amber-400' : 'text-slate-700'}`}>
-                            {sData.branches[b].toLocaleString()}
-                          </div>
-                          <div className="text-[9px] text-slate-500 font-bold mt-1 uppercase">THB</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-
-              {totalTransferredAll === 0 && (
-                <div className="text-center py-12 bg-[#1e2336] rounded-[2rem] border border-dashed border-[#3b4363]">
-                  <div className="text-slate-600 mb-2 flex justify-center"><ShieldAlert size={32} /></div>
-                  <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">ไม่พบรายการข้อมูลในวันที่เลือก</p>
-                </div>
-              )}
+               {/* ข้อความแจ้งสถานะการสแกน */}
+               {scanStatus === 'success' && (
+                 <div className="mt-3 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex items-center gap-2 text-emerald-400">
+                   <CheckCircle size={16} className="shrink-0" />
+                   <span className="text-[11px] font-bold leading-tight">{scanMessage}</span>
+                 </div>
+               )}
+               {scanStatus === 'error' && (
+                 <div className="mt-3 p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl flex items-start gap-2 text-rose-400">
+                   <AlertTriangle size={16} className="shrink-0 mt-0.5" />
+                   <div className="text-[11px] font-bold leading-tight">
+                     {scanMessage}
+                     <div className="text-white/60 mt-1 font-medium">คุณสามารถพิมพ์ระบุยอดเงินด้านล่างด้วยตนเองได้เลยค่ะ</div>
+                   </div>
+                 </div>
+               )}
             </div>
+
+            {/* กล่องข้อมูลอื่นๆ */}
+            <form onSubmit={handleSubmit} className="bg-[#1e293b] p-5 rounded-3xl shadow-xl border border-slate-700 space-y-4 relative">
+               <h3 className="text-sm font-black text-white mb-2 flex items-center gap-2"><FileText size={18} className="text-blue-400"/> 2. รายละเอียดการโอน</h3>
+               
+               <div className="grid grid-cols-2 gap-3">
+                 <div>
+                   <label className="text-[10px] font-bold text-slate-400 block mb-1 uppercase tracking-wider">ชื่อพนักงาน</label>
+                   <input type="text" value={form.staff} onChange={e => setForm({...form, staff: e.target.value})} className="w-full p-3.5 bg-slate-800 rounded-xl border border-slate-700 text-white outline-none focus:border-amber-400 transition-colors text-sm" placeholder="ระบุชื่อ..." required />
+                 </div>
+                 <div>
+                   <label className="text-[10px] font-bold text-slate-400 block mb-1 uppercase tracking-wider">กะการทำงาน</label>
+                   <select value={form.shift} onChange={e => setForm({...form, shift: e.target.value})} className="w-full p-3.5 bg-slate-800 rounded-xl border border-slate-700 text-white outline-none font-bold focus:border-amber-400 transition-colors text-sm appearance-none">
+                     {SHIFTS.map(s => <option key={s} value={s}>{s}</option>)}
+                   </select>
+                 </div>
+               </div>
+
+               <div>
+                 <label className="text-[10px] font-bold text-slate-400 block mb-1 uppercase tracking-wider">วันที่ทำรายการ</label>
+                 <input type="date" value={submitDate} onChange={e => setSubmitDate(e.target.value)} className="w-full p-3.5 bg-slate-800 border border-slate-700 text-white rounded-xl text-sm font-bold outline-none focus:border-amber-400 transition-colors" />
+               </div>
+
+               <div className="grid grid-cols-2 gap-3 pt-2">
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="text-[10px] font-black text-blue-400 block mb-1 uppercase tracking-wider">ยอดเงินที่โอน (บาท)</label>
+                    <input type="number" step="any" value={form.transfer} onChange={e => setForm({...form, transfer: e.target.value})} className={`w-full p-3.5 rounded-xl border outline-none text-xl font-black transition-colors ${scanStatus === 'success' ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-400' : 'bg-blue-500/10 border-blue-500/30 text-blue-400 focus:border-blue-400'}`} placeholder="0.00" required />
+                  </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="text-[10px] font-bold text-slate-400 block mb-1 uppercase tracking-wider">เวลาบนสลิป</label>
+                    <input type="time" value={form.slipTime} onChange={e => setForm({...form, slipTime: e.target.value})} className="w-full p-3.5 bg-slate-800 rounded-xl border border-slate-700 text-white outline-none font-bold focus:border-amber-400 transition-colors text-sm" required />
+                  </div>
+               </div>
+
+               <button type="submit" disabled={loading || scanStatus === 'scanning'} className="w-full mt-4 p-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-black shadow-lg hover:shadow-indigo-500/25 active:scale-95 transition-all text-sm flex items-center justify-center gap-2">
+                 {loading ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle size={18} />} 
+                 {loading ? 'กำลังบันทึกข้อมูล...' : 'ยืนยันการบันทึกยอดโอน'}
+               </button>
+            </form>
           </div>
         )}
 
+        {/* --- แท็บประวัติข้อมูล --- */}
         {activeTab === 'history' && (
-          <div className="space-y-4 animate-in fade-in">
-             <div className="bg-[#1e2336] p-4 rounded-2xl shadow-sm border border-[#3b4363] flex gap-3">
-                 <div className="flex-1"><label className="text-[10px] font-bold text-slate-400 block mb-1">📅 เลือกวันที่เพื่อตรวจสอบข้อมูลย้อนหลัง</label><input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} className="w-full p-2 bg-[#24293f] border border-[#3b4363] text-white rounded-lg text-sm font-bold outline-none" /></div>
+          <div className="space-y-4 animate-in fade-in slide-in-from-right-4">
+             {/* ตัวกรองวันที่ และ สรุปยอดรวมด้านบน */}
+             <div className="bg-[#1e293b] p-5 rounded-3xl shadow-lg border border-slate-700">
+                 <label className="text-[10px] font-bold text-slate-400 block mb-2 uppercase tracking-wider">ตรวจสอบประจำวันที่</label>
+                 <input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} className="w-full p-3.5 bg-slate-800 border border-slate-700 text-white rounded-xl text-sm font-bold outline-none focus:border-amber-400 transition-colors mb-4" />
+                 
+                 <div className="bg-slate-800 p-4 rounded-2xl border border-slate-700 text-center">
+                    <div className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-1">ยอดรวมประจำวันสาขานี้</div>
+                    <div className="text-2xl font-black text-amber-400">{formatNum(totalTransferred)} <span className="text-sm font-medium">฿</span></div>
+                 </div>
              </div>
 
-             {filteredRecords.length === 0 && <div className="text-center py-10 text-slate-500 font-medium">ไม่พบประวัติข้อมูลในวันที่ระบุ</div>}
-             {filteredRecords.map((record) => (
-                <div key={record.id} className="bg-[#1e2336] rounded-3xl p-4 shadow-sm border border-[#3b4363] overflow-hidden">
-                  <div className="flex justify-between items-start border-b border-[#3b4363] pb-2 mb-3">
-                      <div><span className="font-bold text-amber-400 text-sm">{record?.staff || 'ไม่ระบุชื่อพนักงาน'} <span className="text-xs text-amber-500/70">(กะ{record?.shift || '-'})</span></span><div className="text-[10px] text-slate-500 mt-1">{record?.submitDate || record?.timestamp}</div></div>
-                      <div className="flex gap-1"><button onClick={() => openEdit(record)} className="p-1.5 bg-blue-500/20 text-blue-400 rounded-lg"><Edit2 size={16}/></button><button onClick={() => setDeletingId(record.id)} className="p-1.5 bg-red-500/10 text-red-400 hover:bg-red-500/20 rounded-lg"><Trash2 size={16}/></button></div>
-                  </div>
-                  <div className="flex gap-3">
-                     <div className="w-20 h-24 bg-[#1c2135] rounded-xl overflow-hidden cursor-pointer relative group shrink-0 border border-[#3b4363]" onClick={() => setPreviewImage(record?.slipImage)}>
-                        {record?.slipImage ? <img src={record.slipImage} className="w-full h-full object-cover group-hover:scale-110 transition-transform opacity-80" /> : <div className="flex items-center justify-center h-full text-slate-600"><ImageIcon size={20} /></div>}
+             {/* รายการประวัติ */}
+             <div className="space-y-3">
+               {filteredRecords.length === 0 && <div className="text-center py-10 text-slate-500 font-medium bg-[#1e293b] rounded-3xl border border-dashed border-slate-700">ไม่พบรายการโอนในวันนี้</div>}
+               {filteredRecords.map((record) => (
+                  <div key={record.id} className="bg-[#1e293b] rounded-3xl p-4 shadow-sm border border-slate-700 flex gap-4 items-center">
+                     <div className="w-16 h-20 bg-slate-800 rounded-xl overflow-hidden cursor-pointer shrink-0 border border-slate-600 relative group" onClick={() => setPreviewImage(record?.slipImage)}>
+                        {record?.slipImage ? (
+                          <>
+                            <img src={record.slipImage} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300 opacity-80" />
+                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><Search size={16} className="text-white"/></div>
+                          </>
+                        ) : <div className="flex items-center justify-center h-full text-slate-600"><ImageIcon size={16} /></div>}
                      </div>
-                     <div className="flex-1 flex flex-col justify-center space-y-2">
-                        <div className="bg-blue-500/10 p-2 rounded-xl border border-blue-500/20 flex justify-between items-center"><span className="text-[10px] font-bold text-blue-400">📱 ยอดเงินโอน</span><span className="font-black text-blue-400 text-sm">{record?.transfer || '0'} ฿</span></div>
-                        <div className="flex justify-between items-center px-1"><span className="text-[10px] font-bold text-slate-500">🕒 เวลาโอน:</span><span className="font-bold text-slate-300 text-xs">{record?.slipTime || '-'}</span></div>
+                     <div className="flex-1 min-w-0">
+                        <div className="flex justify-between items-start mb-1">
+                          <div className="font-bold text-white text-sm truncate">{record?.staff} <span className="text-[10px] bg-slate-700 px-1.5 py-0.5 rounded text-slate-300 ml-1">กะ{record?.shift}</span></div>
+                          <div className="text-[10px] text-slate-500 shrink-0 font-medium bg-slate-800 px-2 py-0.5 rounded-full">{record?.slipTime}</div>
+                        </div>
+                        <div className="text-[10px] text-slate-500 mb-2">{record?.submitDate || getLocalYMD(record?.createdAt)}</div>
+                        <div className="font-black text-blue-400 text-lg">{formatNum(record?.transfer)} <span className="text-[10px] font-bold">THB</span></div>
                      </div>
                   </div>
-                </div>
-              ))}
-
-             {historyList.filter(h => h && h.branch === selectedBranch).length > 0 && (
-                <button onClick={() => setIsClearingAll(true)} className="w-full mt-6 p-4 bg-red-500/10 text-red-400 rounded-2xl font-bold border border-red-500/20 hover:bg-red-500/20 flex items-center justify-center gap-2 active:scale-95 transition-all"><Trash2 size={18} /> ลบประวัติข้อมูลทั้งหมด (สาขา {selectedBranch})</button>
-             )}
+                ))}
+             </div>
           </div>
         )}
       </main>
 
-      {previewImage && (<div className="fixed inset-0 bg-black/95 backdrop-blur-sm flex flex-col items-center justify-center p-4 animate-in zoom-in-95" style={{ zIndex: 100 }}><button onClick={() => setPreviewImage(null)} className="absolute top-6 right-6 text-white/50 hover:text-white bg-slate-800/50 p-2 rounded-full"><X size={24}/></button><img src={previewImage} className="max-w-full max-h-[85vh] object-contain rounded-xl shadow-2xl border border-slate-700" /></div>)}
+      {/* Popup ดูรูปเต็ม */}
+      {previewImage && (
+        <div className="fixed inset-0 bg-slate-900/95 backdrop-blur-sm flex flex-col items-center justify-center p-4 animate-in zoom-in-95" style={{ zIndex: 100 }}>
+          <button onClick={() => setPreviewImage(null)} className="absolute top-6 right-6 text-white/50 hover:text-white bg-slate-800 p-2 rounded-full border border-slate-700"><X size={24}/></button>
+          <img src={previewImage} className="max-w-full max-h-[85vh] object-contain rounded-2xl shadow-2xl border border-slate-700" />
+        </div>
+      )}
       
-      {deletingId && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4" style={{ zIndex: 110 }}>
-          <div className="bg-[#24293f] border border-[#3b4363] p-8 rounded-3xl w-full max-w-xs text-center">
-            <div className="text-red-400 mb-2 flex justify-center"><Trash2 size={32}/></div>
-            <h4 className="font-bold text-white mb-2">ยืนยันการลบรายการนี้?</h4>
-            <p className="text-[10px] text-red-400 mb-4">* กรุณาระบุรหัสผ่านผู้ดูแลระบบ</p>
-            <input type="password" value={deletePin} onChange={e => setDeletePin(e.target.value)} className="w-full p-3 bg-[#1c2135] border border-[#3b4363] text-white rounded-xl text-center font-bold outline-none focus:border-red-400 mb-4 tracking-[0.5em] font-mono" placeholder="****" />
-            <div className="flex gap-2">
-              <button onClick={() => { setDeletingId(null); setDeletePin(''); }} className="flex-1 py-3 bg-[#1c2135] text-slate-400 rounded-xl font-bold border border-[#3b4363]">ยกเลิก</button>
-              <button onClick={handleDelete} className="flex-1 py-3 bg-red-500 text-white rounded-xl font-bold">ยืนยันการลบ</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {isClearingAll && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-6" style={{ zIndex: 110 }}>
-          <div className="bg-[#24293f] border border-[#3b4363] p-6 rounded-3xl w-full max-w-sm text-center animate-in zoom-in-95">
-            <div className="w-16 h-16 bg-red-500/10 text-red-400 rounded-full flex items-center justify-center mx-auto mb-4 border border-red-500/20"><Trash2 size={24}/></div>
-            <h3 className="font-black text-xl text-white mb-2">ลบประวัติข้อมูลทั้งหมด?</h3>
-            <p className="text-[10px] text-red-400 mb-4 font-bold">* กรุณาระบุรหัสผ่านผู้ดูแลระบบเพื่อยืนยันการลบข้อมูล</p>
-            <div className="bg-[#1c2135] p-3 rounded-xl mb-4 border border-[#3b4363]"><input type="password" placeholder="รหัสผ่าน" value={clearAllPin} onChange={e => setClearAllPin(e.target.value)} className="w-full p-3 bg-transparent text-white text-center text-lg font-black outline-none focus:border-red-400 tracking-[0.5em] font-mono" /></div>
-            <div className="flex gap-2">
-              <button onClick={() => { setIsClearingAll(false); setClearAllPin(''); }} className="flex-1 py-3 bg-[#1c2135] text-slate-400 border border-[#3b4363] rounded-xl font-bold">ยกเลิก</button>
-              <button onClick={handleClearAll} disabled={loading} className="flex-1 py-3 bg-red-500 text-white rounded-xl font-black">{loading ? 'กำลังดำเนินการ...' : 'ยืนยันการลบข้อมูล'}</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <style dangerouslySetInnerHTML={{__html: `
+        @keyframes scan { 0% { top: 0; } 50% { top: 100%; } 100% { top: 0; } }
+      `}} />
     </div>
   );
 }
 
 // ============================================================================
-// 📦 SYSTEM 1: ระบบปิดกะ (ShiftApp)
+// 📦 SYSTEM 1: ระบบปิดกะ (ShiftApp) - คงเดิมแต่ปรับให้ส่ง branch ไปเช็คสลิปได้
 // ============================================================================
 function ShiftApp({ onBack }) {
   const [currentView, setCurrentView] = useState('menu'); 
@@ -535,7 +450,6 @@ function ShiftApp({ onBack }) {
       
       const compressedBase64 = await compressImage(file);
       
-      // แนบภาพเข้าระบบทันที ไม่ว่าจะตรวจผ่านหรือไม่
       if (isEditing) {
          setEditingRecord(prev => ({ ...prev, [field]: compressedBase64 }));
       } else {
@@ -543,7 +457,8 @@ function ShiftApp({ onBack }) {
       }
 
       if (field === 'transferSlipImage') {
-         const verifyResult = await verifySlipWithAPI(compressedBase64);
+         const verifyResult = await verifySlipWithAPI(compressedBase64, activeBranch);
+         
          if (verifyResult.success) {
             if (isEditing) setEditingRecord(prev => ({ ...prev, transferAmount: verifyResult.amount.toString() }));
             else setFormData(prev => ({ ...prev, transferAmount: verifyResult.amount.toString() }));
@@ -672,20 +587,20 @@ function ShiftApp({ onBack }) {
     </button>
   );
 
-  const inputStyle = "w-full bg-[#1c2135] border border-[#3b4363] rounded-lg p-3 text-white focus:outline-none focus:border-[#60a5fa] transition text-sm";
+  const inputStyle = "w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white focus:outline-none focus:border-[#60a5fa] transition text-sm";
   const labelStyle = "block text-[#94a3b8] text-xs font-medium mb-1.5";
 
   let branchDisplayHistory = historyData.filter(d => d.branch === activeBranch);
   if (staffViewShiftId) branchDisplayHistory = branchDisplayHistory.filter(d => d.id === staffViewShiftId);
 
   return (
-    <div className="min-h-screen bg-[#111526] font-sans flex justify-center">
-      <div className="w-full max-w-md bg-[#161a2b] min-h-screen relative shadow-2xl overflow-x-hidden pb-10">
+    <div className="min-h-screen bg-[#0f172a] font-sans flex justify-center">
+      <div className="w-full max-w-md bg-[#0f172a] min-h-screen relative shadow-2xl overflow-x-hidden pb-10">
         
         {/* --- Modal แก้ไข --- */}
         {editingRecord && (
           <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-            <div className="bg-[#24293f] border border-[#3b4363] rounded-[2rem] p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95 flex flex-col max-h-[90vh]">
+            <div className="bg-[#1e293b] border border-slate-700 rounded-[2rem] p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95 flex flex-col max-h-[90vh]">
               <div className="flex justify-between items-center mb-4 shrink-0">
                 <h3 className="text-white font-black text-lg flex items-center gap-2"><Edit2 className="text-blue-400" /> แก้ไขประวัติข้อมูล</h3>
                 <button onClick={() => setEditingRecord(null)} className="p-2 text-slate-400 hover:text-white"><X size={20}/></button>
@@ -700,7 +615,7 @@ function ShiftApp({ onBack }) {
                   <div><label className={labelStyle}>หักเงินทอนกะใหม่</label><input type="number" className={inputStyle} value={editingRecord.nextFloat} onChange={e => setEditingRecord({...editingRecord, nextFloat: e.target.value})} /></div>
                   <div>
                     <label className={labelStyle}>ยอดรับโอน/QR</label><input type="number" className={inputStyle} value={editingRecord.transferAmount} onChange={e => setEditingRecord({...editingRecord, transferAmount: e.target.value})} />
-                    <label className={`flex flex-col items-center justify-center w-full h-12 border rounded-lg cursor-pointer overflow-hidden relative mt-1 transition-all ${isVerifying ? 'border-amber-400 bg-amber-400/10' : 'border-[#3b4363] hover:bg-[#2d334d] bg-[#1c2135]'}`}>
+                    <label className={`flex flex-col items-center justify-center w-full h-12 border rounded-lg cursor-pointer overflow-hidden relative mt-1 transition-all ${isVerifying ? 'border-amber-400 bg-amber-400/10' : 'border-slate-700 hover:bg-slate-700 bg-slate-800'}`}>
                       {isVerifying ? (
                          <Loader2 className="animate-spin text-amber-400" size={16}/>
                       ) : editingRecord.transferSlipImage ? (
@@ -713,14 +628,14 @@ function ShiftApp({ onBack }) {
                   </div>
                 </div>
 
-                <div className="bg-[#1c2135] p-3 rounded-xl border border-[#3b4363]">
+                <div className="bg-slate-800 p-3 rounded-xl border border-slate-700">
                   <div className="flex justify-between items-center mb-2">
                     <label className={labelStyle + " !mb-0"}>แก้ไขรายการค่าใช้จ่าย</label>
                     <button onClick={editAddExpense} className="text-[10px] bg-blue-500/20 text-blue-400 px-2 py-1 rounded">เพิ่มรายการ</button>
                   </div>
                   <div className="space-y-3">
                     {editingRecord.expenses?.map((exp, idx) => (
-                      <div key={exp.id || idx} className="bg-[#24293f] p-2.5 rounded-lg border border-[#3b4363] relative">
+                      <div key={exp.id || idx} className="bg-slate-900/50 p-2.5 rounded-lg border border-slate-700 relative">
                         <button onClick={() => editRemoveExpense(idx)} className="absolute -top-2 -right-2 text-white bg-red-500 rounded-full p-0.5 shadow-md"><X size={12}/></button>
                         <div className="grid grid-cols-2 gap-2 mb-2">
                           <select className={inputStyle + " !p-2 !text-xs"} value={exp.type} onChange={e => editUpdateExpense(idx, 'type', e.target.value)}>
@@ -733,7 +648,7 @@ function ShiftApp({ onBack }) {
                             <input type="text" placeholder="ระบุรายละเอียด..." className={inputStyle + " !p-2 !text-xs"} value={exp.detail || ''} onChange={e => editUpdateExpense(idx, 'detail', e.target.value)} />
                           </div>
                         )}
-                        <label className="flex flex-col items-center justify-center w-full h-10 border border-dashed border-[#3b4363] rounded-lg cursor-pointer bg-[#1c2135] overflow-hidden relative">
+                        <label className="flex flex-col items-center justify-center w-full h-10 border border-dashed border-slate-700 rounded-lg cursor-pointer bg-slate-800 overflow-hidden relative">
                           {exp.image ? <img src={exp.image} className="w-full h-full object-cover opacity-60" /> : <div className="text-slate-500 text-[10px] font-bold"><ImageIcon size={12} className="inline mr-1 opacity-50"/>แนบภาพหลักฐาน</div>}
                           <input type="file" className="hidden" accept="image/*" onChange={e => editUploadExpenseImage(idx, e)} />
                         </label>
@@ -756,25 +671,25 @@ function ShiftApp({ onBack }) {
         {/* --- Modal ป๊อปอัพหน้าสรุป --- */}
         {summaryPopupInfo && (
           <div className="fixed inset-0 z-[150] bg-black/80 backdrop-blur-md flex items-center justify-center p-4" onClick={() => setSummaryPopupInfo(null)}>
-            <div className="bg-[#24293f] border border-[#3b4363] rounded-[2rem] p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95 flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
+            <div className="bg-[#1e293b] border border-slate-700 rounded-[2rem] p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95 flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
               <div className="flex justify-between items-center mb-4 shrink-0">
                 <h3 className="text-white font-black text-lg flex items-center gap-2"><BarChart2 className="text-blue-400" /> {summaryPopupInfo.title}</h3>
-                <button onClick={() => setSummaryPopupInfo(null)} className="p-2 text-slate-400 bg-[#1c2135] rounded-full hover:text-white"><X size={18}/></button>
+                <button onClick={() => setSummaryPopupInfo(null)} className="p-2 text-slate-400 bg-slate-800 rounded-full hover:text-white"><X size={18}/></button>
               </div>
               <div className="overflow-y-auto pr-1 custom-scrollbar space-y-4 flex-1">
                 {summaryPopupInfo.records.map((r, i) => {
                    const expList = r.expenses && r.expenses.length > 0 ? r.expenses : (Number(r.expenseAmount) > 0 ? [{ id: 1, type: r.expenseType, amount: r.expenseAmount, image: r.expenseSlipImage, detail: '' }] : []);
                    return (
-                    <div key={i} className="bg-[#1c2135] p-4 rounded-2xl border border-[#3b4363]">
-                      <div className="flex justify-between items-center border-b border-[#3b4363] pb-2 mb-3">
+                    <div key={i} className="bg-slate-800 p-4 rounded-2xl border border-slate-700">
+                      <div className="flex justify-between items-center border-b border-slate-700 pb-2 mb-3">
                         <div className="font-bold text-blue-400">พนักงาน: <span className="text-white">{r.cashierName}</span></div>
                         <div className="text-xs text-slate-500">{r.time}</div>
                       </div>
                       <div className="grid grid-cols-2 gap-3 text-xs mb-3">
-                        <div className="bg-[#24293f] p-2 rounded-lg border border-[#374160]">
+                        <div className="bg-slate-900/50 p-2 rounded-lg border border-slate-700">
                           <span className="text-slate-400 block mb-1">เงินทอนเริ่มต้นกะ</span><span className="text-white font-bold text-sm">{formatNum(r.floatIn)} ฿</span>
                         </div>
-                        <div className="bg-[#24293f] p-2 rounded-lg border border-[#374160]">
+                        <div className="bg-slate-900/50 p-2 rounded-lg border border-slate-700">
                           <span className="text-slate-400 block mb-1">หักเงินทอนกะใหม่</span><span className="text-blue-400 font-bold text-sm">{formatNum(r.nextFloat)} ฿</span>
                         </div>
                       </div>
@@ -790,10 +705,10 @@ function ShiftApp({ onBack }) {
                            </div>
                         </div>
                         {expList.length > 0 && (
-                          <div className="mt-2 pt-2 border-t border-[#3b4363]">
+                          <div className="mt-2 pt-2 border-t border-slate-700">
                              <div className="text-rose-400 font-bold mb-1">รายการค่าใช้จ่าย:</div>
                              {expList.map((exp, eIdx) => (
-                               <div key={eIdx} className="flex justify-between items-center bg-[#24293f] p-1.5 rounded mb-1">
+                               <div key={eIdx} className="flex justify-between items-center bg-slate-900/50 p-1.5 rounded mb-1">
                                   <div className="flex items-center gap-1.5">
                                     {exp.image && <div className="w-6 h-6 rounded bg-slate-800 overflow-hidden cursor-pointer" onClick={() => setPreviewImage(exp.image)}><img src={exp.image} className="w-full h-full object-cover"/></div>}
                                     <span className="text-rose-300 text-[10px]">{exp.type} {exp.detail && `(${exp.detail})`}</span>
@@ -806,7 +721,7 @@ function ShiftApp({ onBack }) {
                         {(Number(r.overAmount) > 0) && <div className="flex justify-between text-amber-400 pt-1"><span>จำนวนเงินเกิน:</span> <span>+{formatNum(r.overAmount)} ฿</span></div>}
                         {(Number(r.shortAmount) > 0) && <div className="flex justify-between text-rose-400 pt-1"><span>จำนวนเงินขาด:</span> <span>-{formatNum(r.shortAmount)} ฿</span></div>}
                       </div>
-                      {r.notes && <div className="mt-3 p-2 bg-[#2d334d] rounded-lg text-[10px] text-slate-400 border border-[#3b4363]">หมายเหตุ: {r.notes}</div>}
+                      {r.notes && <div className="mt-3 p-2 bg-slate-900/50 rounded-lg text-[10px] text-slate-400 border border-slate-700">หมายเหตุ: {r.notes}</div>}
                     </div>
                    );
                 })}
@@ -817,15 +732,15 @@ function ShiftApp({ onBack }) {
         )}
 
         {previewImage && (
-          <div className="fixed inset-0 z-[400] bg-black/95 backdrop-blur-sm flex flex-col items-center justify-center p-4 animate-in zoom-in-95">
-             <button onClick={() => setPreviewImage(null)} className="absolute top-6 right-6 text-white/50 hover:text-white bg-slate-800/50 p-2 rounded-full"><X size={24} /></button>
-             <img src={previewImage} className="max-w-full max-h-[85vh] object-contain rounded-xl shadow-2xl border border-slate-700" />
+          <div className="fixed inset-0 z-[400] bg-slate-900/95 backdrop-blur-sm flex flex-col items-center justify-center p-4 animate-in zoom-in-95">
+             <button onClick={() => setPreviewImage(null)} className="absolute top-6 right-6 text-white/50 hover:text-white bg-slate-800 p-2 rounded-full border border-slate-700"><X size={24} /></button>
+             <img src={previewImage} className="max-w-full max-h-[85vh] object-contain rounded-2xl shadow-2xl border border-slate-700" />
           </div>
         )}
 
         {confirmDialog.show && (
           <div className="absolute inset-0 z-[200] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-[#24293f] border border-[#3b4363] rounded-2xl p-6 w-full max-w-sm shadow-2xl text-center">
+            <div className="bg-[#1e293b] border border-slate-700 rounded-2xl p-6 w-full max-w-sm shadow-2xl text-center">
               <AlertTriangle size={48} className="text-red-400 mx-auto mb-4" />
               <h3 className="text-white font-bold text-lg mb-2">ยืนยันการดำเนินการ</h3>
               <p className="text-slate-400 text-sm mb-6 leading-relaxed whitespace-pre-line">{confirmDialog.message}</p>
@@ -833,12 +748,12 @@ function ShiftApp({ onBack }) {
                 <input 
                   type="password" inputMode="numeric" placeholder="รหัสผ่านผู้ดูแลระบบ (PIN)" 
                   value={confirmPin} onChange={(e) => setConfirmPin(e.target.value)}
-                  className="w-full bg-[#1c2135] border border-[#3b4363] text-white text-center text-xl tracking-[0.3em] p-3 rounded-xl focus:outline-none focus:border-blue-500 mb-6 font-mono"
+                  className="w-full bg-slate-800 border border-slate-700 text-white text-center text-xl tracking-[0.3em] p-3 rounded-xl focus:outline-none focus:border-blue-500 mb-6 font-mono"
                   maxLength={4} autoFocus
                 />
               )}
               <div className="flex space-x-3">
-                <button onClick={() => { setConfirmDialog({ show: false, message: '', onConfirm: null, requirePin: false }); setConfirmPin(''); }} className="flex-1 py-3 rounded-xl bg-[#1c2135] text-white border border-[#3b4363]">ยกเลิก</button>
+                <button onClick={() => { setConfirmDialog({ show: false, message: '', onConfirm: null, requirePin: false }); setConfirmPin(''); }} className="flex-1 py-3 rounded-xl bg-slate-800 text-white border border-slate-700">ยกเลิก</button>
                 <button onClick={() => { confirmDialog.onConfirm(confirmPin); setConfirmDialog({ show: false, message: '', onConfirm: null, requirePin: false }); setConfirmPin(''); }} className="flex-1 py-3 rounded-xl bg-red-500 text-white font-bold">ยืนยัน</button>
               </div>
             </div>
@@ -856,16 +771,16 @@ function ShiftApp({ onBack }) {
         {currentView === 'menu' && (
           <div className="p-5 pb-10">
             <div className="flex flex-col items-center justify-center mt-6 mb-8 relative">
-              <button onClick={onBack} className="absolute left-0 top-0 p-2 bg-[#24293f] rounded-full text-white border border-[#374160] hover:bg-[#2d334d] transition-colors"><ChevronLeft size={20} /></button>
-              <div className="w-20 h-20 bg-[#24293f] rounded-full flex items-center justify-center shadow-lg border border-[#374160] mb-4"><Crown size={40} className="text-[#fcd34d]" /></div>
+              <button onClick={onBack} className="absolute left-0 top-0 p-2 bg-slate-800 rounded-full text-white border border-slate-700 hover:bg-slate-700 transition-colors"><ChevronLeft size={20} /></button>
+              <div className="w-20 h-20 bg-slate-800 rounded-full flex items-center justify-center shadow-lg border border-slate-700 mb-4"><Crown size={40} className="text-[#fcd34d]" /></div>
               <h1 className="text-2xl font-black text-[#fcd34d] tracking-wider">ระบบบันทึกปิดกะ</h1>
               <p className="text-[10px] text-slate-400 tracking-[0.2em] mt-1 uppercase">Shift Management System</p>
             </div>
             <div className="space-y-2">
               <MenuButton title="ปิดกะสาขา 2" subtitle="บันทึกข้อมูลปิดยอด / ตรวจสอบประวัติ" icon={Store} bgClass="bg-gradient-to-r from-[#884fff] to-[#713be5]" onClick={() => handleEnterBranch('สาขา 2')} />
               <MenuButton title="ปิดกะสาขา 5" subtitle="บันทึกข้อมูลปิดยอด / ตรวจสอบประวัติ" icon={Store} bgClass="bg-gradient-to-r from-[#0ea5e9] to-[#0284c7]" onClick={() => handleEnterBranch('สาขา 5')} />
-              <div className="pt-4 mt-4 border-t border-[#2d334d]"></div>
-              <button onClick={() => setCurrentView('summary')} className="w-full rounded-[16px] bg-[#2b3040] border border-[#3b4363] p-4 flex items-center justify-center active:scale-95 shadow-lg hover:bg-[#32384a] transition-colors">
+              <div className="pt-4 mt-4 border-t border-slate-700/50"></div>
+              <button onClick={() => setCurrentView('summary')} className="w-full rounded-[16px] bg-slate-800 border border-slate-700 p-4 flex items-center justify-center active:scale-95 shadow-lg hover:bg-slate-700 transition-colors">
                  <Lock size={20} className="text-[#fcd34d] mr-3" />
                  <span className="text-white font-bold">รายงานสรุปยอดรวมทุกสาขา</span>
               </button>
@@ -879,23 +794,23 @@ function ShiftApp({ onBack }) {
         {/* ================= จัดการสาขา (ลงข้อมูล/ประวัติ) ================= */}
         {currentView === 'branch' && (
           <div className="flex flex-col h-full">
-            <div className="bg-[#1e2336] p-4 flex items-center border-b border-[#2d334d] sticky top-0 z-10">
-              <button onClick={() => { setCurrentView('menu'); setIsHistoryUnlocked(false); setStaffViewShiftId(null); setPin(''); }} className="p-2 bg-[#24293f] rounded-xl text-white mr-4 border border-[#374160] hover:bg-[#2d334d]"><ChevronLeft size={20} /></button>
+            <div className="bg-[#1e293b] p-4 flex items-center border-b border-slate-700 sticky top-0 z-10 shadow-md">
+              <button onClick={() => { setCurrentView('menu'); setIsHistoryUnlocked(false); setStaffViewShiftId(null); setPin(''); }} className="p-2 bg-slate-800 rounded-xl text-white mr-4 border border-slate-700 hover:bg-slate-700"><ChevronLeft size={20} /></button>
               <h2 className="text-lg font-bold text-white flex items-center"><MapPin size={16} className="text-[#60a5fa] mr-2"/> {activeBranch}</h2>
             </div>
-            <div className="flex p-4 space-x-3 bg-[#161a2b]">
-              <button onClick={() => setBranchTab('form')} className={`flex-1 py-3 rounded-xl text-sm font-bold flex justify-center items-center transition ${branchTab === 'form' ? 'bg-[#2563eb] text-white shadow-lg' : 'bg-[#24293f] text-slate-400 border border-[#374160]'}`}><FileText size={16} className="mr-2"/> บันทึกข้อมูล</button>
-              <button onClick={() => setBranchTab('history')} className={`flex-1 py-3 rounded-xl text-sm font-bold flex justify-center items-center transition ${branchTab === 'history' ? 'bg-[#2563eb] text-white shadow-lg' : 'bg-[#24293f] text-slate-400 border border-[#374160]'}`}>
+            <div className="flex p-4 space-x-3">
+              <button onClick={() => setBranchTab('form')} className={`flex-1 py-3 rounded-xl text-sm font-bold flex justify-center items-center transition ${branchTab === 'form' ? 'bg-[#2563eb] text-white shadow-lg' : 'bg-slate-800 text-slate-400 border border-slate-700'}`}><FileText size={16} className="mr-2"/> บันทึกข้อมูล</button>
+              <button onClick={() => setBranchTab('history')} className={`flex-1 py-3 rounded-xl text-sm font-bold flex justify-center items-center transition ${branchTab === 'history' ? 'bg-[#2563eb] text-white shadow-lg' : 'bg-slate-800 text-slate-400 border border-slate-700'}`}>
                 {(isHistoryUnlocked || staffViewShiftId) ? <Search size={16} className="mr-2"/> : <Lock size={16} className="mr-2"/>} ประวัติข้อมูล
               </button>
             </div>
 
             <div className="p-4 overflow-y-auto">
               {branchTab === 'form' ? (
-                <div className="bg-[#24293f] p-5 rounded-[20px] border border-[#374160] shadow-xl">
-                  <div className="mb-5 bg-[#1c2135] p-3 rounded-xl border border-blue-500/30">
+                <div className="bg-slate-800 p-5 rounded-[20px] border border-slate-700 shadow-xl">
+                  <div className="mb-5 bg-slate-900/50 p-3 rounded-xl border border-blue-500/30">
                     <label className={labelStyle}>📅 วันที่ประจำกะ</label>
-                    <input type="date" value={formData.recordDate} onChange={(e) => setFormData({...formData, recordDate: e.target.value})} className={`${inputStyle} text-blue-300 font-bold tracking-widest`} />
+                    <input type="date" value={formData.recordDate} onChange={(e) => setFormData({...formData, recordDate: e.target.value})} className={`${inputStyle} bg-transparent border-none p-0 text-blue-300 font-bold tracking-widest`} />
                   </div>
 
                   <div className="grid grid-cols-2 gap-4 mb-4">
@@ -904,7 +819,7 @@ function ShiftApp({ onBack }) {
                     <div><label className={labelStyle}>เงินทอนเริ่มต้นกะ</label><input type="number" value={formData.floatIn} onChange={(e) => setFormData({...formData, floatIn: e.target.value})} className={inputStyle} placeholder="0" /></div>
                   </div>
                   
-                  <div className="bg-[#1c2135] p-4 rounded-xl border border-[#3b4363] mb-4">
+                  <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700 mb-4">
                     <h3 className="text-white text-sm font-bold mb-3 flex items-center"><Wallet size={16} className="mr-2 text-emerald-400"/> ระบบการเงิน</h3>
                     <div className="space-y-3">
                       <div><label className={labelStyle}>ยอดเงินสดสุทธิ</label><input type="number" value={formData.actualCash} onChange={(e) => setFormData({...formData, actualCash: e.target.value})} className={`${inputStyle} border-emerald-500/50 bg-emerald-900/10 text-emerald-300 font-bold text-lg`} placeholder="0" /></div>
@@ -913,7 +828,7 @@ function ShiftApp({ onBack }) {
                         <div>
                            <label className={labelStyle}>ยอดเงินรับโอน</label>
                            <input type="number" value={formData.transferAmount} onChange={(e) => setFormData({...formData, transferAmount: e.target.value})} className={inputStyle} placeholder="0" />
-                           <label className={`flex flex-col items-center justify-center w-full h-16 border-2 border-dashed rounded-lg cursor-pointer overflow-hidden relative mt-2 transition-all ${isVerifying ? 'border-amber-400 bg-amber-400/10' : 'border-[#3b4363] hover:bg-[#2d334d] bg-[#1c2135]'}`}>
+                           <label className={`flex flex-col items-center justify-center w-full h-16 border-2 border-dashed rounded-lg cursor-pointer overflow-hidden relative mt-2 transition-all ${isVerifying ? 'border-amber-400 bg-amber-400/10' : 'border-slate-700 hover:bg-slate-700 bg-slate-800'}`}>
                              {isVerifying ? (
                                <div className="flex flex-col items-center text-amber-400"><Loader2 className="animate-spin mb-1" size={16}/><span className="text-[9px] font-bold">ตรวจสอบ...</span></div>
                              ) : formData.transferSlipImage ? ( 
@@ -928,17 +843,17 @@ function ShiftApp({ onBack }) {
                     </div>
                   </div>
 
-                  <div className="bg-[#1c2135] p-4 rounded-xl border border-[#3b4363] mb-4">
+                  <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700 mb-4">
                      <div className="flex justify-between items-center mb-3">
                         <label className={labelStyle + " !mb-0"}>รายการค่าใช้จ่ายประจำกะ</label>
                         <button onClick={addExpense} className="text-[10px] font-bold bg-blue-500/20 text-blue-400 px-3 py-1.5 rounded-lg flex items-center gap-1 active:scale-95 transition-all hover:bg-blue-500/30"><Plus size={12}/> เพิ่มรายการ</button>
                      </div>
                      {formData.expenses.length === 0 && (
-                        <div className="text-center text-slate-500 text-xs py-4 bg-[#24293f] rounded-lg border border-dashed border-[#3b4363]">ไม่มีรายการค่าใช้จ่าย</div>
+                        <div className="text-center text-slate-500 text-xs py-4 bg-slate-800 rounded-lg border border-dashed border-slate-700">ไม่มีรายการค่าใช้จ่าย</div>
                      )}
                      <div className="space-y-3">
                         {formData.expenses.map((exp, idx) => (
-                           <div key={exp.id} className="bg-[#24293f] p-3 rounded-lg border border-[#3b4363] relative animate-in fade-in">
+                           <div key={exp.id} className="bg-slate-800 p-3 rounded-lg border border-slate-700 relative animate-in fade-in">
                               <button onClick={() => removeExpense(idx)} className="absolute -top-2 -right-2 text-white bg-red-500 rounded-full p-1 shadow-md hover:bg-red-600 transition-colors"><X size={12}/></button>
                               <div className="grid grid-cols-2 gap-2 mb-2">
                                  <select className={inputStyle + " !p-2 !text-xs"} value={exp.type} onChange={e => updateExpense(idx, 'type', e.target.value)}>
@@ -951,7 +866,7 @@ function ShiftApp({ onBack }) {
                                    <input type="text" placeholder="ระบุรายละเอียด (จำเป็น)" className={inputStyle + " !p-2 !text-xs"} value={exp.detail} onChange={e => updateExpense(idx, 'detail', e.target.value)} />
                                  </div>
                               )}
-                              <label className="flex items-center justify-center w-full h-12 border border-dashed border-[#3b4363] rounded-lg cursor-pointer hover:bg-[#2d334d] bg-[#1c2135] overflow-hidden relative">
+                              <label className="flex items-center justify-center w-full h-12 border border-dashed border-slate-700 rounded-lg cursor-pointer hover:bg-slate-700 bg-slate-900/50 overflow-hidden relative">
                                 {exp.image ? <img src={exp.image} className="w-full h-full object-cover opacity-60" /> : <div className="text-slate-400 text-[10px] font-bold flex items-center gap-1"><ImageIcon size={14}/> แตะเพื่อแนบภาพหลักฐาน</div>}
                                 <input type="file" className="hidden" accept="image/*" onChange={e => uploadExpenseImage(idx, e)} />
                               </label>
@@ -959,13 +874,13 @@ function ShiftApp({ onBack }) {
                         ))}
                      </div>
                      {formData.expenses.length > 0 && (
-                        <div className="mt-3 pt-3 border-t border-[#3b4363] text-right text-xs font-bold text-rose-400">
+                        <div className="mt-3 pt-3 border-t border-slate-700 text-right text-xs font-bold text-rose-400">
                           ยอดรวมค่าใช้จ่าย: {formatNum(formData.expenses.reduce((s, e) => s + (Number(e.amount)||0), 0))} ฿
                         </div>
                      )}
                   </div>
 
-                  <div className="bg-[#1c2135] p-4 rounded-xl border border-[#3b4363] mb-4">
+                  <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700 mb-4">
                     <div className="grid grid-cols-2 gap-3">
                       <div><label className={labelStyle}>จำนวนเงินเกิน</label><input type="number" value={formData.overAmount} onChange={(e) => setFormData({...formData, overAmount: e.target.value})} className={`${inputStyle} text-yellow-400`} placeholder="0" /></div>
                       <div><label className={labelStyle}>จำนวนเงินขาด</label><input type="number" value={formData.shortAmount} onChange={(e) => setFormData({...formData, shortAmount: e.target.value})} className={`${inputStyle} text-red-400`} placeholder="0" /></div>
@@ -977,16 +892,16 @@ function ShiftApp({ onBack }) {
               ) : (
                 <div className="space-y-4">
                   {(!isHistoryUnlocked && !staffViewShiftId) ? (
-                    <div className="bg-[#24293f] p-8 rounded-[20px] border border-[#374160] shadow-2xl text-center mt-4">
-                      <div className="w-16 h-16 bg-[#1c2135] rounded-full flex items-center justify-center mx-auto mb-4 border border-[#3b4363]"><Lock size={30} className="text-[#64748b]" /></div>
+                    <div className="bg-slate-800 p-8 rounded-[20px] border border-slate-700 shadow-2xl text-center mt-4">
+                      <div className="w-16 h-16 bg-slate-900/50 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-700"><Lock size={30} className="text-[#64748b]" /></div>
                       <h2 className="text-lg font-bold text-white mb-6">รหัสผ่านเพื่อเข้าถึงประวัติข้อมูล</h2>
-                      <input type="password" value={pin} onChange={(e) => setPin(e.target.value)} className="w-full bg-[#1c2135] border border-[#3b4363] text-white text-center text-3xl tracking-[0.5em] p-4 rounded-xl focus:border-blue-500 mb-6 font-mono outline-none" maxLength={4} placeholder="****" onKeyDown={(e) => e.key === 'Enter' && handleLogin('history')} />
+                      <input type="password" value={pin} onChange={(e) => setPin(e.target.value)} className="w-full bg-slate-900/50 border border-slate-700 text-white text-center text-3xl tracking-[0.5em] p-4 rounded-xl focus:border-blue-500 mb-6 font-mono outline-none" maxLength={4} placeholder="****" onKeyDown={(e) => e.key === 'Enter' && handleLogin('history')} />
                       <button onClick={() => handleLogin('history')} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl active:scale-95 transition flex justify-center items-center"><Unlock size={18} className="mr-2" /> ยืนยันรหัสผ่าน</button>
                     </div>
                   ) : (
                     <>
                       {staffViewShiftId && (
-                         <div className="mb-4 bg-[#1c2135] p-3 rounded-xl border border-emerald-500/30 shadow-lg flex justify-between items-center">
+                         <div className="mb-4 bg-slate-900/50 p-3 rounded-xl border border-emerald-500/30 shadow-lg flex justify-between items-center">
                             <span className="text-emerald-400 text-[11px] font-bold flex items-center gap-1"><CheckCircle size={14}/> รายการข้อมูลปัจจุบัน</span>
                             <button onClick={() => { setIsHistoryUnlocked(false); setStaffViewShiftId(null); setPin(''); }} className="text-[10px] bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-lg text-white font-bold shadow-md active:scale-95 transition">
                                ดูข้อมูลทั้งหมด
@@ -998,39 +913,39 @@ function ShiftApp({ onBack }) {
                          const expList = data.expenses && data.expenses.length > 0 ? data.expenses : 
                                         (Number(data.expenseAmount) > 0 ? [{ id: 1, type: data.expenseType, amount: data.expenseAmount, image: data.expenseSlipImage }] : []);
                          return (
-                         <div key={data.id || index} className="bg-[#24293f] rounded-[20px] p-5 border border-[#374160] shadow-xl w-full mb-6">
+                         <div key={data.id || index} className="bg-slate-800 rounded-[20px] p-5 border border-slate-700 shadow-xl w-full mb-6">
                             <div className="flex justify-between items-center mb-4">
-                              <div className="flex items-center space-x-2 bg-[#2d334d] px-3 py-1.5 rounded-lg border border-[#3b4363]"><Calendar size={14} className="text-pink-400" /><span className="text-[#5eead4] font-bold text-xs">{data.date}</span></div>
+                              <div className="flex items-center space-x-2 bg-slate-900/50 px-3 py-1.5 rounded-lg border border-slate-700"><Calendar size={14} className="text-pink-400" /><span className="text-[#5eead4] font-bold text-xs">{data.date}</span></div>
                               <div className="flex items-center space-x-2">
                                 <div className="text-xs font-bold text-slate-400 mr-2">{data.time}</div>
                                 <button onClick={() => openEditModal(data)} className="p-2 bg-blue-500/10 text-blue-400 rounded-lg active:scale-90 transition hover:bg-blue-500/20"><Edit2 size={16} /></button>
                                 <button onClick={() => handleDeleteRecord(data.id)} className="p-2 bg-red-500/10 text-red-400 rounded-lg active:scale-90 transition hover:bg-red-500/20"><Trash2 size={16} /></button>
                               </div>
                             </div>
-                            <div className="bg-[#2d334d] p-4 rounded-xl border border-[#3b4363] mb-3">
+                            <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-700 mb-3">
                               <div className="text-[#94a3b8] text-[10px] font-bold mb-1 uppercase tracking-widest">ยอดเงินนำส่งสุทธิรวม</div>
                               <div className="text-2xl font-extrabold text-[#fcd34d]">{formatNum(((Number(data.actualCash) || 0) - (Number(data.nextFloat) || 0)) + (Number(data.transferAmount) || 0))} ฿</div>
                             </div>
                             <div className="grid grid-cols-2 gap-2 text-xs mb-3">
-                              <div className="bg-[#1c2135] p-2.5 rounded-xl border border-[#3b4363]"><span className="text-slate-400 block mb-1">เงินทอนเริ่มต้นกะ</span><span className="text-white font-bold">{formatNum(data.floatIn)} ฿</span></div>
-                              <div className="bg-[#1c2135] p-2.5 rounded-xl border border-[#3b4363]"><span className="text-slate-400 block mb-1">หักเงินทอนกะใหม่</span><span className="text-blue-400 font-bold">{formatNum(data.nextFloat)} ฿</span></div>
+                              <div className="bg-slate-900/50 p-2.5 rounded-xl border border-slate-700"><span className="text-slate-400 block mb-1">เงินทอนเริ่มต้นกะ</span><span className="text-white font-bold">{formatNum(data.floatIn)} ฿</span></div>
+                              <div className="bg-slate-900/50 p-2.5 rounded-xl border border-slate-700"><span className="text-slate-400 block mb-1">หักเงินทอนกะใหม่</span><span className="text-blue-400 font-bold">{formatNum(data.nextFloat)} ฿</span></div>
                             </div>
-                            <div className="bg-[#1c2135] p-3 rounded-xl border border-[#3b4363] text-xs grid grid-cols-2 gap-2 text-slate-300">
+                            <div className="bg-slate-900/50 p-3 rounded-xl border border-slate-700 text-xs grid grid-cols-2 gap-2 text-slate-300">
                               <div><span className="text-slate-500">พนักงาน:</span> {data.cashierName}</div><div><span className="text-slate-500">กะการทำงาน:</span> {data.shift}</div>
                               <div className="col-span-2 truncate"><span className="text-slate-500">หมายเหตุ:</span> {data.notes || '-'}</div>
                             </div>
                             {(data.transferSlipImage || expList.length > 0) && (
-                              <div className="flex gap-2 mt-3 pt-3 border-t border-[#3b4363] overflow-x-auto pb-1 custom-scrollbar">
+                              <div className="flex gap-2 mt-3 pt-3 border-t border-slate-700 overflow-x-auto pb-1 custom-scrollbar">
                                 {data.transferSlipImage && (
-                                  <div className="w-14 h-14 rounded-lg overflow-hidden border border-[#374160] cursor-pointer shrink-0" onClick={() => setPreviewImage(data.transferSlipImage)}>
+                                  <div className="w-14 h-14 rounded-lg overflow-hidden border border-slate-600 cursor-pointer shrink-0" onClick={() => setPreviewImage(data.transferSlipImage)}>
                                     <img src={data.transferSlipImage} className="w-full h-full object-cover opacity-80 hover:opacity-100 transition-opacity" />
-                                    <div className="text-center text-[8px] bg-[#1c2135] text-blue-400">ภาพหลักฐาน</div>
+                                    <div className="text-center text-[8px] bg-slate-900/50 text-blue-400">ภาพหลักฐาน</div>
                                   </div>
                                 )}
                                 {expList.map((exp, eIdx) => exp.image && (
-                                  <div key={eIdx} className="w-14 h-14 rounded-lg overflow-hidden border border-[#374160] cursor-pointer shrink-0" onClick={() => setPreviewImage(exp.image)}>
+                                  <div key={eIdx} className="w-14 h-14 rounded-lg overflow-hidden border border-slate-600 cursor-pointer shrink-0" onClick={() => setPreviewImage(exp.image)}>
                                     <img src={exp.image} className="w-full h-full object-cover opacity-80 hover:opacity-100 transition-opacity" />
-                                    <div className="text-center text-[8px] bg-[#1c2135] text-rose-400 truncate px-0.5">{exp.type}</div>
+                                    <div className="text-center text-[8px] bg-slate-900/50 text-rose-400 truncate px-0.5">{exp.type}</div>
                                   </div>
                                 ))}
                               </div>
@@ -1051,22 +966,22 @@ function ShiftApp({ onBack }) {
         {/* ================= สรุปยอดรวม ================= */}
         {currentView === 'summary' && (
           <div className="flex flex-col h-full">
-            <div className="bg-[#1e2336] p-4 flex items-center border-b border-[#2d334d] sticky top-0 z-10 shadow-lg">
-              <button onClick={() => { setCurrentView('menu'); setIsUnlocked(false); setPin(''); }} className="p-2 bg-[#24293f] rounded-xl text-white mr-4 border border-[#374160] hover:bg-[#2d334d]"><ChevronLeft size={20} /></button>
+            <div className="bg-[#1e293b] p-4 flex items-center border-b border-slate-700 sticky top-0 z-10 shadow-lg">
+              <button onClick={() => { setCurrentView('menu'); setIsUnlocked(false); setPin(''); }} className="p-2 bg-slate-800 rounded-xl text-white mr-4 border border-slate-700 hover:bg-slate-700"><ChevronLeft size={20} /></button>
               <h2 className="text-lg font-bold text-[#fcd34d] flex items-center"><Lock size={16} className="mr-2"/> รายงานสรุปยอดรวม</h2>
             </div>
             <div className="p-4">
               {!isUnlocked ? (
-                <div className="bg-[#24293f] p-8 rounded-[20px] border border-[#374160] shadow-2xl text-center mt-6">
-                  <div className="w-16 h-16 bg-[#1c2135] rounded-full flex items-center justify-center mx-auto mb-4 border border-[#3b4363]"><Lock size={30} className="text-[#64748b]" /></div>
+                <div className="bg-slate-800 p-8 rounded-[20px] border border-slate-700 shadow-2xl text-center mt-6">
+                  <div className="w-16 h-16 bg-slate-900/50 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-700"><Lock size={30} className="text-[#64748b]" /></div>
                   <h2 className="text-lg font-bold text-white mb-6">รหัสผ่านผู้บริหาร</h2>
-                  <input type="password" value={pin} onChange={(e) => setPin(e.target.value)} className="w-full bg-[#1c2135] border border-[#3b4363] text-white text-center text-3xl tracking-[0.5em] p-4 rounded-xl focus:border-blue-500 mb-6 font-mono outline-none" maxLength={4} placeholder="****" onKeyDown={(e) => e.key === 'Enter' && handleLogin('summary')} />
+                  <input type="password" value={pin} onChange={(e) => setPin(e.target.value)} className="w-full bg-slate-900/50 border border-slate-700 text-white text-center text-3xl tracking-[0.5em] p-4 rounded-xl focus:border-blue-500 mb-6 font-mono outline-none" maxLength={4} placeholder="****" onKeyDown={(e) => e.key === 'Enter' && handleLogin('summary')} />
                   <button onClick={() => handleLogin('summary')} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl active:scale-95 transition flex justify-center items-center"><Unlock size={18} className="mr-2" /> ยืนยันรหัสผ่าน</button>
                 </div>
               ) : (
                 <div className="pb-10">
                    <div className="flex justify-between items-center mb-6">
-                      <div className="flex items-center bg-[#24293f] p-2 rounded-xl border border-[#3b4363] shadow-lg flex-1 mr-3">
+                      <div className="flex items-center bg-slate-800 p-2 rounded-xl border border-slate-700 shadow-lg flex-1 mr-3">
                         <Filter size={18} className="text-blue-400 mx-2" />
                         <select value={summaryDate} onChange={(e) => setSummaryDate(e.target.value)} className="bg-transparent text-sm text-white font-bold outline-none w-full appearance-none">
                           <option value="all">ตรวจสอบทุกวัน (รวมทั้งหมด)</option>
@@ -1076,32 +991,32 @@ function ShiftApp({ onBack }) {
                       <button onClick={handleDeleteSpecificHistory} className="p-3 bg-red-500/10 text-red-500 rounded-xl border border-red-500/20 hover:bg-red-500/20 active:scale-95 transition shadow-lg"><Trash2 size={18}/></button>
                    </div>
                    {summary.groupedData.map((branchData, idx) => (
-                     <div key={idx} className="bg-[#24293f] p-4 rounded-[20px] border border-[#3b4363] shadow-xl mb-6">
-                        <h4 className="text-[#60a5fa] font-black text-base mb-3 flex items-center pb-3 border-b border-[#3b4363]"><Store size={18} className="mr-2"/> {branchData.branch}</h4>
+                     <div key={idx} className="bg-slate-800 p-4 rounded-[20px] border border-slate-700 shadow-xl mb-6">
+                        <h4 className="text-[#60a5fa] font-black text-base mb-3 flex items-center pb-3 border-b border-slate-700"><Store size={18} className="mr-2"/> {branchData.branch}</h4>
                         {branchData.hasData ? (
-                          <div className="overflow-hidden rounded-xl border border-[#1c2135]">
-                            <table className="w-full text-left text-sm bg-[#1c2135]">
-                              <thead><tr className="text-[#94a3b8] bg-[#161a2b] border-b border-[#3b4363]"><th className="py-3 px-3 font-medium">กะ (คลิกเพื่อดูรายละเอียด)</th><th className="py-3 px-3 font-medium text-right">ยอดเงินสด</th><th className="py-3 px-3 font-medium text-right">ยอดเงินโอน</th></tr></thead>
+                          <div className="overflow-hidden rounded-xl border border-slate-900/50">
+                            <table className="w-full text-left text-sm bg-slate-900/50">
+                              <thead><tr className="text-[#94a3b8] bg-[#161a2b] border-b border-slate-700"><th className="py-3 px-3 font-medium">กะ (คลิกเพื่อดูรายละเอียด)</th><th className="py-3 px-3 font-medium text-right">ยอดเงินสด</th><th className="py-3 px-3 font-medium text-right">ยอดเงินโอน</th></tr></thead>
                               <tbody>
                                 {branchData.shifts.map((s, sIdx) => (
-                                  <tr key={sIdx} className={`border-b border-[#3b4363]/30 text-white last:border-0 ${s.records.length > 0 ? 'cursor-pointer hover:bg-[#2d334d]/80 transition' : ''}`} onClick={() => s.records.length > 0 && setSummaryPopupInfo({ title: `${branchData.branch} - กะ${s.shift}`, records: s.records })}>
+                                  <tr key={sIdx} className={`border-b border-slate-700/50 text-white last:border-0 ${s.records.length > 0 ? 'cursor-pointer hover:bg-slate-800 transition' : ''}`} onClick={() => s.records.length > 0 && setSummaryPopupInfo({ title: `${branchData.branch} - กะ${s.shift}`, records: s.records })}>
                                     <td className="py-3 px-3 text-xs flex items-center gap-1.5">{s.shift} {s.records.length > 0 && <span className="bg-blue-500/20 text-blue-400 rounded-full p-1"><Info size={12}/></span>}</td>
                                     <td className="py-3 px-3 text-right font-mono font-bold">{s.cash !== null ? <span className="text-blue-300">{formatNum(s.cash)}</span> : <span className="text-slate-600">-</span>}</td>
                                     <td className="py-3 px-3 text-right font-mono font-bold">{s.transfer !== null ? <span className="text-[#34d399]">{formatNum(s.transfer)}</span> : <span className="text-slate-600">-</span>}</td>
                                   </tr>
                                 ))}
                               </tbody>
-                              <tfoot><tr className="bg-[#2d334d] border-t border-[#3b4363]"><td className="py-3 px-3 text-xs text-[#fcd34d] font-bold">รวมทั้งสิ้น</td><td className="py-3 px-3 text-right text-[#fcd34d] font-mono font-black">{formatNum(branchData.totalCash)}</td><td className="py-3 px-3 text-right text-[#fcd34d] font-mono font-black">{formatNum(branchData.totalTransfer)}</td></tr></tfoot>
+                              <tfoot><tr className="bg-slate-800 border-t border-slate-700"><td className="py-3 px-3 text-xs text-[#fcd34d] font-bold">รวมทั้งสิ้น</td><td className="py-3 px-3 text-right text-[#fcd34d] font-mono font-black">{formatNum(branchData.totalCash)}</td><td className="py-3 px-3 text-right text-[#fcd34d] font-mono font-black">{formatNum(branchData.totalTransfer)}</td></tr></tfoot>
                             </table>
                           </div>
-                        ) : (<div className="text-center py-6 text-slate-500 text-xs bg-[#1c2135] rounded-xl border border-[#3b4363]">ไม่พบข้อมูลในวันดังกล่าว</div>)}
+                        ) : (<div className="text-center py-6 text-slate-500 text-xs bg-slate-900/50 rounded-xl border border-slate-700">ไม่พบข้อมูลในวันดังกล่าว</div>)}
                      </div>
                    ))}
                    <div className="bg-gradient-to-r from-blue-600/20 to-indigo-600/20 p-5 rounded-[20px] border border-blue-500/30 shadow-2xl mt-8">
                       <div className="text-center mb-4"><div className="text-[10px] text-blue-300 font-bold uppercase tracking-widest mb-1">ยอดรวมสุทธิทุกสาขา</div><div className="text-3xl font-black text-white">{formatNum(summary.grandTotalCash + summary.grandTotalTransfer)} <span className="text-sm font-normal">฿</span></div></div>
                       <div className="grid grid-cols-2 gap-3 text-center">
-                        <div className="bg-[#1c2135] p-3 rounded-xl border border-[#3b4363]"><div className="text-xs text-slate-400 mb-1">ยอดเงินสดรวมสุทธิ</div><div className="text-lg font-black text-[#60a5fa]">{formatNum(summary.grandTotalCash)}</div></div>
-                        <div className="bg-[#1c2135] p-3 rounded-xl border border-[#3b4363]"><div className="text-xs text-slate-400 mb-1">ยอดเงินโอนรวมสุทธิ</div><div className="text-lg font-black text-[#34d399]">{formatNum(summary.grandTotalTransfer)}</div></div>
+                        <div className="bg-slate-900/50 p-3 rounded-xl border border-slate-700"><div className="text-xs text-slate-400 mb-1">ยอดเงินสดรวมสุทธิ</div><div className="text-lg font-black text-[#60a5fa]">{formatNum(summary.grandTotalCash)}</div></div>
+                        <div className="bg-slate-900/50 p-3 rounded-xl border border-slate-700"><div className="text-xs text-slate-400 mb-1">ยอดเงินโอนรวมสุทธิ</div><div className="text-lg font-black text-[#34d399]">{formatNum(summary.grandTotalTransfer)}</div></div>
                       </div>
                    </div>
                 </div>
@@ -1124,25 +1039,25 @@ export default function App() {
   if (system === 'transfer') return <TransferApp onBack={() => setSystem('menu')} />;
 
   return (
-    <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-800 via-slate-900 to-black font-sans">
+    <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-[#0f172a] font-sans">
       <div className="text-center mb-10 animate-in slide-in-from-bottom-4">
-        <div className="w-24 h-24 bg-gradient-to-br from-amber-400 to-orange-500 rounded-full flex items-center justify-center mx-auto mb-4 shadow-[0_0_40px_rgba(251,191,36,0.3)] border-4 border-slate-800"><span className="text-5xl">👑</span></div>
+        <div className="w-24 h-24 bg-gradient-to-br from-amber-400 to-orange-500 rounded-full flex items-center justify-center mx-auto mb-4 shadow-[0_0_40px_rgba(251,191,36,0.2)] border-4 border-slate-800"><span className="text-5xl">👑</span></div>
         <h1 className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-200 to-yellow-500 mb-2 tracking-wider">M&N KC</h1>
         <p className="text-slate-400 text-[11px] tracking-widest uppercase font-bold">Shift & Transfer Management</p>
       </div>
       
       <div className="w-full max-w-sm space-y-4 animate-in fade-in zoom-in-95 duration-500">
-        <button onClick={() => setSystem('shift')} className="w-full bg-gradient-to-r from-blue-600 to-indigo-700 p-5 rounded-2xl shadow-lg active:scale-95 transition-all flex items-center gap-5 border border-white/10 hover:shadow-blue-500/20">
-           <div className="bg-white/20 p-3.5 rounded-xl shadow-inner"><Crown className="text-white w-7 h-7"/></div>
-           <div className="text-left"><h2 className="text-xl font-black text-white leading-tight">ระบบบันทึกปิดกะ</h2><p className="text-blue-200 text-[10px] mt-1 font-medium">สรุปยอด / ค่าใช้จ่าย / ตรวจสอบประวัติ</p></div>
+        <button onClick={() => setSystem('shift')} className="w-full bg-slate-800 p-5 rounded-[2rem] shadow-lg active:scale-95 transition-all flex items-center gap-5 border border-slate-700 hover:border-blue-500/50 group">
+           <div className="bg-blue-500/10 p-4 rounded-2xl group-hover:bg-blue-500/20 transition-colors"><Crown className="text-blue-400 w-8 h-8"/></div>
+           <div className="text-left"><h2 className="text-xl font-black text-white leading-tight mb-1">ระบบบันทึกปิดกะ</h2><p className="text-slate-400 text-[10px] font-medium">สรุปยอดเงินสด / ค่าใช้จ่ายประจำวัน</p></div>
         </button>
         
-        <button onClick={() => setSystem('transfer')} className="w-full bg-gradient-to-r from-amber-500 to-orange-600 p-5 rounded-2xl shadow-lg active:scale-95 transition-all flex items-center gap-5 border border-white/10 hover:shadow-orange-500/20">
-           <div className="bg-white/20 p-3.5 rounded-xl shadow-inner"><Wallet className="text-white w-7 h-7"/></div>
-           <div className="text-left"><h2 className="text-xl font-black text-white leading-tight">ระบบบันทึกยอดโอน</h2><p className="text-amber-100 text-[10px] mt-1 font-medium">บันทึกข้อมูล / รายงานสรุปยอดโอน</p></div>
+        <button onClick={() => setSystem('transfer')} className="w-full bg-slate-800 p-5 rounded-[2rem] shadow-lg active:scale-95 transition-all flex items-center gap-5 border border-slate-700 hover:border-amber-500/50 group">
+           <div className="bg-amber-500/10 p-4 rounded-2xl group-hover:bg-amber-500/20 transition-colors"><ScanLine className="text-amber-400 w-8 h-8"/></div>
+           <div className="text-left"><h2 className="text-xl font-black text-white leading-tight mb-1">ระบบเช็คยอดโอน</h2><p className="text-slate-400 text-[10px] font-medium">สแกนสลิปออโต้ / บันทึกประวัติยอดโอน</p></div>
         </button>
       </div>
-      <p className="fixed bottom-4 text-slate-600 text-[9px] font-bold tracking-widest uppercase">Version 2.0 • Pro Edition</p>
+      <p className="fixed bottom-4 text-slate-600 text-[9px] font-bold tracking-widest uppercase">Version 3.0 • AI Powered</p>
     </div>
   );
 }
