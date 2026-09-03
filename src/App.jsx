@@ -28,7 +28,7 @@ try {
 }
 
 // ============================================================================
-// 🔑 รหัส SECRET KEY ของทั้ง 2 สาขา
+// 🔑 รหัส SECRET KEY ของทั้ง 2 สาขา (ตรวจสอบแล้ว)
 // ============================================================================
 const SLIP2GO_KEY_BRANCH_2 = "gaHTLTHzI2ohH5w_YkYhuJrEIyxjZn8WRLtk2GsBM2w=";  
 const SLIP2GO_KEY_BRANCH_5 = "NbwWJ+RBLNY2EDunM9J1zZvPcva0EbArjIOh+bhpYo8=";  
@@ -100,7 +100,7 @@ const getLocalYMD = (timestamp) => {
 const formatNum = (num) => Number(num).toLocaleString('th-TH');
 
 // ============================================================================
-// 💸 MAIN APP: ระบบเช็คยอดโอน (Fast Camera Version)
+// 💸 MAIN APP: ระบบเช็คยอดโอน (Fast Camera Version) แก้บั๊กจอขาวแล้ว
 // ============================================================================
 export default function App() {
   const TRANSFER_BRANCHES = [2, 5]; 
@@ -110,7 +110,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [historyList, setHistoryList] = useState([]);
   
-  // State ของฟอร์ม (เพิ่ม receiptImage)
+  // State ของฟอร์ม (มี receiptImage)
   const [form, setForm] = useState({ staff: '', shift: SHIFTS[0], transfer: '', slipTime: '', slipImage: '', receiptImage: '' });
   const [submitDate, setSubmitDate] = useState(getTodayIso());
   
@@ -138,8 +138,18 @@ export default function App() {
     }); return () => unsubscribe();
   }, []);
 
+  // ฟังก์ชันย้อนกลับหน้าแรก (แก้ไขบั๊ก)
+  const handleBackToHome = () => {
+    setSelectedBranch(null);
+    setForm({ staff: '', shift: SHIFTS[0], transfer: '', slipTime: '', slipImage: '', receiptImage: '' });
+    setScanStatus('idle');
+    setIsOwnerUnlocked(false);
+    setOwnerPin('');
+    setEditSession(null);
+  };
+
   // โหลดสลิปโอนเงิน (บังคับถ่ายก่อน)
-  const handleSlipUpload = async (e) => {
+  const handleImageUpload = async (e) => {
     const file = e.target.files[0]; if (!file) return;
     try { 
       setScanStatus('scanning');
@@ -267,7 +277,7 @@ export default function App() {
             </button>
           ))}
         </div>
-        <p className="fixed bottom-4 text-slate-600 text-[9px] font-bold tracking-widest uppercase">Version 4.0 • Fast Scan Mode</p>
+        <p className="fixed bottom-4 text-slate-600 text-[9px] font-bold tracking-widest uppercase">Version 4.1 • Fast Scan Mode</p>
       </div>
     );
   }
@@ -312,7 +322,7 @@ export default function App() {
            <div className="font-black text-white text-lg">สาขา {selectedBranch}</div>
            <div className="text-[10px] text-amber-400 font-bold uppercase tracking-widest">Transfer & Receipt</div>
         </div>
-        <button onClick={() => {setSelectedBranch(null); setForm({ staff: '', shift: SHIFTS[0], transfer: '', slipTime: '', slipImage: '', receiptImage: '' }); setScanStatus('idle'); setIsOwnerUnlocked(false); setOwnerPin(''); setEditSession(null);}} className="text-[10px] bg-slate-800 border border-slate-700 px-3 py-2 rounded-xl font-bold text-white hover:bg-slate-700 transition-colors flex items-center gap-1"><Store size={12}/> เปลี่ยนสาขา</button>
+        <button onClick={handleBackToHome} className="text-[10px] bg-slate-800 border border-slate-700 px-3 py-2 rounded-xl font-bold text-white hover:bg-slate-700 transition-colors flex items-center gap-1"><Store size={12}/> เปลี่ยนสาขา</button>
       </header>
 
       <main className="max-w-md mx-auto p-4">
