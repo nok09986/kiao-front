@@ -35,7 +35,7 @@ const SLIP2GO_KEY_BRANCH_5 = "NbwWJ+RBLNY2EDunM9J1zZvPcva0EbArjIOh+bhpYo8=";
 
 const SHIFTS = ["เช้า", "บ่าย", "ดึก"];
 
-// ⚡ ปรับปรุง: บีบอัดรูปภาพให้เบาลงกว่าเดิม เพื่อให้แอปเซฟไว โหลดไว ไม่ค้าง ⚡
+// บีบอัดรูปภาพให้เบาลงกว่าเดิม
 const compressImage = (file) => {
   return new Promise((resolve) => {
     const reader = new FileReader();
@@ -109,7 +109,7 @@ const getLocalYMD = (timestamp) => {
 const formatNum = (num) => Number(num).toLocaleString('th-TH');
 
 // ============================================================================
-// 💸 MAIN APP: ระบบเช็คยอดโอน (Fast Camera Version)
+// 💸 MAIN APP: ระบบเช็คยอดโอน
 // ============================================================================
 export default function App() {
   const TRANSFER_BRANCHES = [2, 5]; 
@@ -133,12 +133,15 @@ export default function App() {
   const [editSession, setEditSession] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
   const [deletePin, setDeletePin] = useState('');
+  
+  // State จัดการเรื่องการลบ
   const [isClearingAll, setIsClearingAll] = useState(false);
   const [clearAllPin, setClearAllPin] = useState('');
+  const [isClearingOld, setIsClearingOld] = useState(false);
+  const [clearOldPin, setClearOldPin] = useState('');
 
   useEffect(() => {
-    // ⚡ ปรับปรุง: ดึงประวัติมาแค่ 50 รายการล่าสุด เพื่อแก้ปัญหาโหลดช้าและกินเน็ต ⚡
-    const q = query(collection(db, 'transfer_reports'), orderBy('createdAt', 'desc'), limit(50));
+    const q = query(collection(db, 'transfer_reports'), orderBy('createdAt', 'desc'), limit(150));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setHistoryList(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
     }); return () => unsubscribe();
@@ -258,6 +261,38 @@ export default function App() {
     } catch (err) {} finally { setLoading(false); setIsClearingAll(false); setClearAllPin(''); }
   };
 
+  // 🔥 ฟังก์ชันใหม่: ลบประวัติที่เก่ากว่า 14 วัน 🔥
+  const handleClearOldRecords = async () => {
+    if (clearOldPin !== '0202') return alert("รหัสผ่านไม่ถูกต้อง");
+    
+    // คำนวณเวลา 14 วันที่แล้ว (มิลลิวินาที)
+    const cutoffTime = Date.now() - (14 * 24 * 60 * 60 * 1000);
+    
+    // กรองหาข้อมูลสาขานี้ที่เก่ากว่า 14 วัน
+    const oldRecords = historyList.filter(r => r && r.branch === selectedBranch && r.createdAt < cutoffTime);
+    
+    if (oldRecords.length === 0) {
+      alert("ไม่มีข้อมูลที่เก่ากว่า 14 วันในระบบค่ะ");
+      setIsClearingOld(false);
+      setClearOldPin('');
+      return;
+    }
+    
+    if (!window.confirm(`ยืนยันลบประวัติที่เก่ากว่า 14 วัน จำนวน ${oldRecords.length} รายการ?`)) return;
+    
+    setLoading(true);
+    try {
+        for (const record of oldRecords) await deleteDoc(doc(db, 'transfer_reports', record.id));
+        alert(`ลบประวัติเก่ากว่า 14 วัน จำนวน ${oldRecords.length} รายการเรียบร้อยแล้ว`);
+    } catch (err) {
+        alert("เกิดข้อผิดพลาดในการลบข้อมูล: " + err.message);
+    } finally { 
+        setLoading(false); 
+        setIsClearingOld(false); 
+        setClearOldPin(''); 
+    }
+  };
+
   if (!selectedBranch) {
     return (
       <div className="min-h-screen bg-[#0f172a] flex flex-col items-center justify-center p-6 font-sans">
@@ -278,7 +313,7 @@ export default function App() {
             </button>
           ))}
         </div>
-        <p className="fixed bottom-4 text-slate-600 text-[9px] font-bold tracking-widest uppercase">Version 4.4 • Optimized</p>
+        <p className="fixed bottom-4 text-slate-600 text-[9px] font-bold tracking-widest uppercase">Version 4.5 • Memory Clear</p>
       </div>
     );
   }
@@ -384,7 +419,6 @@ export default function App() {
                     </div>
                  </div>
 
-                 {/* กล่องข้อความแจ้งเตือน Error */}
                  {scanStatus === 'error' && (
                    <div className="p-3 bg-rose-500/10 border border-rose-500/30 rounded-xl flex items-start gap-2 text-rose-400">
                      <AlertTriangle size={16} className="shrink-0 mt-0.5" />
@@ -526,8 +560,13 @@ export default function App() {
                   </div>
                 ))}
              </div>
+             
+             {/* ปุ่มลบประวัติทั้งหมด */}
              {historyList.filter(h => h && h.branch === selectedBranch).length > 0 && (
-                <button onClick={() => setIsClearingAll(true)} className="w-full mt-8 p-4 bg-rose-500/10 text-rose-400 rounded-2xl font-bold hover:bg-rose-500/20 active:scale-95 transition-all flex justify-center items-center gap-2"><Trash2 size={18}/> ลบข้อมูลทั้งหมด</button>
+                <>
+                  <button onClick={() => setIsClearingAll(true)} className="w-full mt-8 p-4 bg-rose-500/10 text-rose-400 rounded-2xl font-bold hover:bg-rose-500/20 active:scale-95 transition-all flex justify-center items-center gap-2"><Trash2 size={18}/> ลบข้อมูลทั้งหมด (สาขา {selectedBranch})</button>
+                  <button onClick={() => setIsClearingOld(true)} className="w-full mt-3 p-4 bg-orange-500/10 text-orange-400 rounded-2xl font-bold hover:bg-orange-500/20 active:scale-95 transition-all flex justify-center items-center gap-2"><Trash2 size={18}/> ลบประวัติที่เก่ากว่า 14 วัน</button>
+                </>
              )}
           </div>
         )}
@@ -609,6 +648,7 @@ export default function App() {
         </div>
       )}
 
+      {/* Popup ยืนยันการลบประวัติทั้งหมด */}
       {isClearingAll && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-6" style={{ zIndex: 110 }}>
           <div className="bg-[#1e293b] border border-slate-700 p-6 rounded-3xl w-full max-w-sm text-center">
@@ -618,6 +658,22 @@ export default function App() {
             <div className="flex gap-2">
               <button onClick={() => { setIsClearingAll(false); setClearAllPin(''); }} className="flex-1 py-3 bg-slate-800 text-slate-400 rounded-xl font-bold">ยกเลิก</button>
               <button onClick={handleClearAll} disabled={loading} className="flex-1 py-3 bg-red-500 text-white rounded-xl font-black">ลบทั้งหมด</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Popup ยืนยันการลบประวัติเก่ากว่า 14 วัน */}
+      {isClearingOld && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-6" style={{ zIndex: 110 }}>
+          <div className="bg-[#1e293b] border border-slate-700 p-6 rounded-3xl w-full max-w-sm text-center">
+            <Trash2 size={24} className="text-orange-400 mx-auto mb-4"/>
+            <h3 className="font-black text-xl text-white mb-2">ลบประวัติเก่ากว่า 14 วัน?</h3>
+            <p className="text-[10px] text-orange-400 mb-4 font-bold">* ข้อมูลที่เก่ากว่า 14 วัน จะถูกลบทิ้งถาวร</p>
+            <input type="password" value={clearOldPin} onChange={e => setClearOldPin(e.target.value)} className="w-full p-3 bg-slate-900 text-white text-center tracking-[0.5em] font-mono mb-4 rounded-xl border border-slate-700" placeholder="****" />
+            <div className="flex gap-2">
+              <button onClick={() => { setIsClearingOld(false); setClearOldPin(''); }} className="flex-1 py-3 bg-slate-800 text-slate-400 rounded-xl font-bold">ยกเลิก</button>
+              <button onClick={handleClearOldRecords} disabled={loading} className="flex-1 py-3 bg-orange-500 text-white rounded-xl font-black">ยืนยันลบ</button>
             </div>
           </div>
         </div>
