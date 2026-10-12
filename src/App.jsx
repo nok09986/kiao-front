@@ -58,7 +58,7 @@ const compressImage = (file) => {
   });
 };
 
-// 🚀 ฟังก์ชัน API ตรวจสลิป 
+// 🚀 ฟังก์ชัน API ตรวจสลิป (แก้กลับมาใช้ /info เพื่อให้สแกนผ่าน 100%)
 const verifySlipWithAPI = async (base64Image, branchName) => {
   try {
     const isBranch5 = branchName && branchName.toString().includes('5');
@@ -69,7 +69,7 @@ const verifySlipWithAPI = async (base64Image, branchName) => {
     }
 
     const callSlip2Go = async (useBearer) => {
-      return await fetch('/api/slip2go/verify-slip/qr-base64', {
+      return await fetch('/api/slip2go/verify-slip/qr-base64/info', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -87,16 +87,20 @@ const verifySlipWithAPI = async (base64Image, branchName) => {
        result = await response.json().catch(() => null);
     }
     
-    if (!result) return { success: false, message: 'เซิร์ฟเวอร์ตรวจสอบไม่ตอบสนอง' };
+    if (!result) return { success: false, message: 'ระบบตรวจสลิปไม่ตอบสนอง' };
     
     if (result.code === '200000' || result.data?.amount !== undefined || result.amount !== undefined) {
        const amount = result.data?.amount ?? result.amount ?? result.payload?.amount;
        return { success: true, amount: amount };
     }
     
-    return { success: false, message: result.message || "สลิปไม่ถูกต้อง หรือปลอมแปลง" };
+    // ปรับแต่งข้อความ Error ให้เข้าใจง่ายขึ้น
+    let errorMsg = result.message || "สลิปไม่ถูกต้อง หรือเช็คกับธนาคารไม่ผ่าน";
+    if (errorMsg.toLowerCase().includes("not found")) errorMsg = "ไม่พบข้อมูลสลิปนี้ในระบบธนาคาร";
+    
+    return { success: false, message: errorMsg };
   } catch (error) {
-    return { success: false, message: 'การเชื่อมต่อขัดข้อง' };
+    return { success: false, message: 'การเชื่อมต่อขัดข้อง กรุณาลองใหม่' };
   }
 };
 
@@ -109,7 +113,7 @@ const getLocalYMD = (timestamp) => {
 const formatNum = (num) => Number(num).toLocaleString('th-TH');
 
 // ============================================================================
-// 💸 MAIN APP: ระบบเช็คยอดโอน (Secure Mode - ล็อคยอด & ห้ามข้ามสแกน)
+// 💸 MAIN APP: ระบบเช็คยอดโอน (Strict Security Mode - ล็อคยอด & ห้ามข้ามสแกน)
 // ============================================================================
 export default function App() {
   const TRANSFER_BRANCHES = [2, 5]; 
@@ -124,7 +128,6 @@ export default function App() {
   
   const [scanStatus, setScanStatus] = useState('idle'); 
   const [scanMessage, setScanMessage] = useState('');
-  const [isAmountLocked, setIsAmountLocked] = useState(true); // ล็อคช่องยอดเงิน
   
   const [filterDate, setFilterDate] = useState(getTodayIso());
   const [isOwnerUnlocked, setIsOwnerUnlocked] = useState(false);
@@ -141,7 +144,7 @@ export default function App() {
   const [clearOldPin, setClearOldPin] = useState('');
 
   useEffect(() => {
-    const q = query(collection(db, 'transfer_reports'), orderBy('createdAt', 'desc'), limit(50));
+    const q = query(collection(db, 'transfer_reports'), orderBy('createdAt', 'desc'), limit(100));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setHistoryList(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
     }); return () => unsubscribe();
@@ -159,7 +162,6 @@ export default function App() {
     setForm({ staff: '', shift: SHIFTS[0], transfer: '', slipTime: '', slipImage: '', receiptImage: '' });
     setScanStatus('idle');
     setScanMessage('');
-    setIsAmountLocked(true);
   };
 
   const handleSlipUpload = async (e) => {
@@ -170,7 +172,6 @@ export default function App() {
       
       const compressedBase64 = await compressImage(file); 
       setForm(prev => ({ ...prev, slipImage: compressedBase64, transfer: '' })); 
-      setIsAmountLocked(true); // ล็อคยอดใหม่ทุกครั้งที่อัปโหลด
       
       const verifyResult = await verifySlipWithAPI(compressedBase64, selectedBranch);
       
@@ -195,18 +196,6 @@ export default function App() {
       setForm(prev => ({ ...prev, receiptImage: compressedBase64 }));
     } catch (err) {
       alert('เกิดข้อผิดพลาดในการโหลดรูปใบเสร็จ');
-    }
-  };
-
-  // 🔥 ฟังก์ชันปลดล็อคฉุกเฉิน (เถ้าแก่เท่านั้น) 🔥
-  const handleEmergencyUnlock = () => {
-    const pin = window.prompt('โหมดฉุกเฉิน: กรุณาระบุรหัสผ่านผู้บริหารเพื่อปลดล็อคการกรอกยอดเงิน');
-    if (pin === '6969') {
-       setScanStatus('success'); // บังคับให้ผ่าน
-       setScanMessage('ปลดล็อคด้วยรหัสผู้บริหารแล้ว');
-       setIsAmountLocked(false); // ปลดล็อคช่องให้พิมพ์ได้
-    } else if (pin !== null) {
-       alert('รหัสผ่านไม่ถูกต้อง');
     }
   };
 
@@ -240,8 +229,7 @@ export default function App() {
       slipTime: record.slipTime !== '-' ? record.slipTime : '', slipImage: record.slipImage || '', receiptImage: record.receiptImage || '' 
     });
     setSubmitDate(record.submitDate || getLocalYMD(record.createdAt));
-    setScanStatus('success'); // อนุญาตให้แก้ไขข้อมูลอื่นได้
-    setIsAmountLocked(true); // ล็อคยอดเดิมไว้
+    setScanStatus('success'); 
     setActiveTab('form');
   };
 
@@ -364,7 +352,7 @@ export default function App() {
           <button onClick={() => setActiveTab('dashboard')} className={`flex-1 py-2.5 rounded-xl text-[11px] font-bold transition-all ${activeTab === 'dashboard' ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}>📊 สรุปยอดรวม</button>
         </div>
 
-        {/* --- แท็บฟอร์ม (โหมดความปลอดภัยเข้มงวด) --- */}
+        {/* --- แท็บฟอร์ม (โหมดความปลอดภัยเข้มงวด 100%) --- */}
         {activeTab === 'form' && (
           <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
             
@@ -384,12 +372,12 @@ export default function App() {
                      </div>
                   ) : (
                      <>
-                        {/* ถ้าสแกน Error โชว์กล่องแดงเตือน */}
+                        {/* ถ้าสแกน Error โชว์กล่องแดงเตือน และไม่อนุญาตให้ผ่านไปกรอกฟอร์ม */}
                         {scanStatus === 'error' ? (
                            <div className="mb-6 bg-rose-500/10 border border-rose-500/30 p-4 rounded-2xl flex flex-col items-center text-rose-400">
                              <AlertTriangle size={32} className="mb-2" />
                              <h3 className="font-black text-lg mb-1">สแกนไม่ผ่าน</h3>
-                             <p className="text-xs font-medium leading-relaxed">{scanMessage}<br/>กรุณาถ่ายรูปสลิปของจริงที่ชัดเจนใหม่ค่ะ</p>
+                             <p className="text-xs font-medium leading-relaxed text-center">{scanMessage}<br/>กรุณาถ่ายรูปสลิปของจริงให้ชัดเจนใหม่ค่ะ</p>
                            </div>
                         ) : (
                            <>
@@ -414,13 +402,6 @@ export default function App() {
                               <input type="file" className="hidden" accept="image/*" onChange={handleSlipUpload} />
                            </label>
                         </div>
-                        
-                        {/* ปุ่มปลดล็อคฉุกเฉิน ซ่อนอยู่ด้านล่าง */}
-                        {scanStatus === 'error' && (
-                           <div className="mt-8 text-center">
-                             <button onClick={handleEmergencyUnlock} className="text-[10px] text-slate-500 font-bold flex items-center justify-center gap-1 mx-auto hover:text-amber-400 transition-colors"><Lock size={10}/> ปลดล็อคระบบ (สำหรับผู้บริหาร)</button>
-                           </div>
-                        )}
 
                         {editSession && <button onClick={() => {setEditSession(null); setActiveTab('history');}} className="mt-6 text-slate-500 text-xs font-bold underline">ยกเลิกแก้ไข</button>}
                      </>
@@ -437,7 +418,7 @@ export default function App() {
                        <img src={form.slipImage} className="w-full h-full object-cover opacity-80" />
                     </div>
                     <div className="flex-1">
-                       <div className="flex items-center gap-1.5 text-emerald-400 mb-1"><CheckCircle size={14}/><span className="text-[10px] font-bold uppercase tracking-widest">{isAmountLocked ? 'ตรวจสอบแล้ว' : 'ปลดล็อคยอดแล้ว'}</span></div>
+                       <div className="flex items-center gap-1.5 text-emerald-400 mb-1"><CheckCircle size={14}/><span className="text-[10px] font-bold uppercase tracking-widest">ตรวจสอบแล้ว</span></div>
                        <div className="text-2xl font-black text-white">{formatNum(form.transfer)} <span className="text-sm font-medium text-slate-400">฿</span></div>
                        <button type="button" onClick={resetForm} className="mt-2 text-[10px] bg-slate-800 text-slate-300 px-3 py-1.5 rounded-lg font-bold border border-slate-600 flex items-center gap-1 w-max active:scale-95"><Camera size={12}/> เปลี่ยนสลิป</button>
                     </div>
@@ -465,11 +446,11 @@ export default function App() {
 
                     <div className="grid grid-cols-2 gap-3 pt-2">
                        <div className="col-span-2 sm:col-span-1">
-                         <label className={`text-[10px] font-black block mb-1.5 uppercase tracking-wider flex items-center gap-1 ${isAmountLocked ? 'text-slate-400' : 'text-amber-400'}`}>
-                           {isAmountLocked ? <><Lock size={10}/> ยอดเงินโอน (ล็อค)</> : <><Unlock size={10}/> ยอดเงิน (ปลดล็อค)</>}
+                         <label className="text-[10px] font-black block mb-1.5 uppercase tracking-wider flex items-center gap-1 text-slate-400">
+                           <Lock size={10}/> ยอดเงินโอน (ล็อคการแก้ไข)
                          </label>
-                         {/* หากล็อคอยู่ ห้ามแก้ (readOnly) เปลี่ยนสีพื้นหลัง */}
-                         <input type="number" step="any" value={form.transfer} onChange={e => setForm({...form, transfer: e.target.value})} readOnly={isAmountLocked} className={`w-full p-3.5 rounded-xl text-xl font-black outline-none border transition-colors ${isAmountLocked ? 'bg-slate-800 border-slate-700 text-slate-300 cursor-not-allowed opacity-80' : 'bg-amber-500/10 border-amber-500/30 text-amber-400'}`} placeholder="0.00" required />
+                         {/* ฟิลด์ยอดเงินถูกล็อค ห้ามแก้ไขเด็ดขาด */}
+                         <input type="number" step="any" value={form.transfer} readOnly={true} className="w-full p-3.5 rounded-xl text-xl font-black outline-none border transition-colors bg-slate-800 border-slate-700 text-slate-300 cursor-not-allowed opacity-80" placeholder="0.00" required />
                        </div>
                        <div className="col-span-2 sm:col-span-1">
                          <label className={labelStyle}>เวลาบนสลิป</label>
@@ -578,6 +559,7 @@ export default function App() {
                 ))}
              </div>
              
+             {/* ปุ่มลบประวัติทั้งหมด */}
              {historyList.filter(h => h && h.branch === selectedBranch).length > 0 && (
                 <>
                   <button onClick={() => setIsClearingAll(true)} className="w-full mt-8 p-4 bg-rose-500/10 text-rose-400 rounded-2xl font-bold hover:bg-rose-500/20 active:scale-95 transition-all flex justify-center items-center gap-2"><Trash2 size={18}/> ลบข้อมูลทั้งหมด (สาขา {selectedBranch})</button>
