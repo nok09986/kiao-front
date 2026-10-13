@@ -1,6 +1,6 @@
 /* eslint-disable */
 import React, { useState, useEffect } from 'react';
-import { Store, Lock, Unlock, CheckCircle, ShieldAlert, FileText, Search, BarChart2, ChevronLeft, Calendar, Clock, MapPin, Trash2, Filter, AlertTriangle, Edit2, X, Info, Image as ImageIcon, Plus, Loader2, ScanLine, Camera, Receipt } from 'lucide-react';
+import { Store, CheckCircle, ShieldAlert, FileText, Search, BarChart2, ChevronLeft, Calendar, Clock, MapPin, Trash2, Filter, AlertTriangle, Edit2, X, Info, Image as ImageIcon, Plus, Loader2, ScanLine, Camera, Receipt, Lock, Unlock } from 'lucide-react';
 
 // --- นำเข้า Firebase ---
 import { initializeApp } from 'firebase/app';
@@ -58,7 +58,7 @@ const compressImage = (file) => {
   });
 };
 
-// 🚀 ฟังก์ชัน API ตรวจสลิป (แก้ไขกลับเป็น /info เพื่อให้ผ่าน Vercel 100%)
+// 🚀 ฟังก์ชัน API ตรวจสลิป 
 const verifySlipWithAPI = async (base64Image, branchName) => {
   try {
     const isBranch5 = branchName && branchName.toString().includes('5');
@@ -69,7 +69,6 @@ const verifySlipWithAPI = async (base64Image, branchName) => {
     }
 
     const callSlip2Go = async (useBearer) => {
-      // ใช้ /info เหมือนเดิมเพื่อไม่ให้ Vercel บล็อคการเชื่อมต่อ
       return await fetch('/api/slip2go/verify-slip/qr-base64/info', {
         method: 'POST',
         headers: {
@@ -88,14 +87,14 @@ const verifySlipWithAPI = async (base64Image, branchName) => {
        result = await response.json().catch(() => null);
     }
     
-    if (!result) return { success: false, message: 'ระบบตรวจสลิปไม่ตอบสนอง (เซิร์ฟเวอร์ขัดข้อง)' };
+    if (!result) return { success: false, message: 'ระบบตรวจสลิปไม่ตอบสนอง' };
     
     if (result.code === '200000' || result.data?.amount !== undefined || result.amount !== undefined) {
        const amount = result.data?.amount ?? result.amount ?? result.payload?.amount;
        return { success: true, amount: amount };
     }
     
-    let errorMsg = result.message || "สลิปไม่ถูกต้อง หรือเช็คกับธนาคารไม่ผ่าน";
+    let errorMsg = result.message || "สลิปไม่ชัดเจน ตรวจสอบยอดไม่ได้";
     if (errorMsg.toLowerCase().includes("not found")) errorMsg = "ไม่พบข้อมูลสลิปนี้ในระบบธนาคาร";
     
     return { success: false, message: errorMsg };
@@ -113,7 +112,7 @@ const getLocalYMD = (timestamp) => {
 const formatNum = (num) => Number(num).toLocaleString('th-TH');
 
 // ============================================================================
-// 💸 MAIN APP: ระบบเช็คยอดโอน (Strict Security Mode - ล็อคยอด & ห้ามข้ามสแกน)
+// 💸 MAIN APP: ระบบเช็คยอดโอน (ปลดล็อคพิมพ์ยอดได้)
 // ============================================================================
 export default function App() {
   const TRANSFER_BRANCHES = [2, 5]; 
@@ -171,14 +170,14 @@ export default function App() {
       setScanMessage('กำลังสแกนสลิป...');
       
       const compressedBase64 = await compressImage(file); 
-      setForm(prev => ({ ...prev, slipImage: compressedBase64, transfer: '' })); 
+      setForm(prev => ({ ...prev, slipImage: compressedBase64 })); 
       
       const verifyResult = await verifySlipWithAPI(compressedBase64, selectedBranch);
       
       if (verifyResult.success) {
         setForm(prev => ({ ...prev, transfer: verifyResult.amount.toString() }));
         setScanStatus('success');
-        setScanMessage(`ตรวจสอบสำเร็จ`);
+        setScanMessage(`ดึงยอดเงินสำเร็จ`);
       } else {
         setScanStatus('error');
         setScanMessage(verifyResult.message);
@@ -199,22 +198,8 @@ export default function App() {
     }
   };
 
-  // โหมดปลดล็อคฉุกเฉิน (สำหรับเถ้าแก่)
-  const handleEmergencyUnlock = () => {
-    const pin = window.prompt('โหมดฉุกเฉิน: กรุณาระบุรหัสผ่านผู้บริหารเพื่อปลดล็อคการกรอกยอดเงิน');
-    if (pin === '6969') {
-       setScanStatus('success');
-       setScanMessage('ปลดล็อคด้วยรหัสผู้บริหารแล้ว');
-       // อนุญาตให้แก้ไขยอดเงินได้เฉพาะตอนปลดล็อคฉุกเฉิน
-       setForm(prev => ({...prev, transfer: prev.transfer || ''}));
-    } else if (pin !== null) {
-       alert('รหัสผ่านไม่ถูกต้อง');
-    }
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (scanStatus !== 'success') return alert("ไม่อนุญาตให้บันทึก: กรุณาสแกนสลิปที่ถูกต้อง");
     if (!form.staff) return alert("กรุณาระบุชื่อพนักงาน");
     if (!form.transfer) return alert("กรุณาระบุจำนวนเงินโอน");
     if (!form.slipImage) return alert("กรุณาแนบภาพสลิปโอนเงิน");
@@ -242,7 +227,7 @@ export default function App() {
       slipTime: record.slipTime !== '-' ? record.slipTime : '', slipImage: record.slipImage || '', receiptImage: record.receiptImage || '' 
     });
     setSubmitDate(record.submitDate || getLocalYMD(record.createdAt));
-    setScanStatus('success'); 
+    setScanStatus(record.transfer ? 'success' : 'idle'); 
     setActiveTab('form');
   };
 
@@ -322,7 +307,7 @@ export default function App() {
             </button>
           ))}
         </div>
-        <p className="fixed bottom-4 text-slate-600 text-[9px] font-bold tracking-widest uppercase">Version 5.1 • Fixed Proxy Sync</p>
+        <p className="fixed bottom-4 text-slate-600 text-[9px] font-bold tracking-widest uppercase">Version 5.2 • Flexible Mode</p>
       </div>
     );
   }
@@ -365,78 +350,69 @@ export default function App() {
           <button onClick={() => setActiveTab('dashboard')} className={`flex-1 py-2.5 rounded-xl text-[11px] font-bold transition-all ${activeTab === 'dashboard' ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}>📊 สรุปยอดรวม</button>
         </div>
 
-        {/* --- แท็บฟอร์ม (โหมดความปลอดภัยเข้มงวด) --- */}
+        {/* --- แท็บฟอร์ม (ยืดหยุ่นให้กรอกยอดได้เสมอ) --- */}
         {activeTab === 'form' && (
           <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4">
             
-            {scanStatus !== 'success' && (
+            {/* โชว์กล่องสแกนก่อนเสมอ หากยังไม่มีสลิป */}
+            {!form.slipImage && scanStatus !== 'scanning' && scanStatus !== 'error' && (
                <div className="bg-[#1e293b] p-6 rounded-3xl shadow-2xl border border-amber-500/30 text-center relative overflow-hidden">
                   <div className="absolute -top-10 -right-10 w-40 h-40 bg-amber-500/10 rounded-full blur-2xl pointer-events-none"></div>
+                  <div className="bg-amber-500/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 border border-amber-500/20">
+                     <ScanLine className="text-amber-400 w-8 h-8" />
+                  </div>
+                  <h3 className="text-white font-black text-xl mb-2">{editSession ? 'แก้ไขรูปสลิป' : 'ขั้นตอนที่ 1 : ถ่ายรูปสลิปโอนเงิน'}</h3>
+                  <p className="text-slate-400 text-xs font-bold mb-6 leading-relaxed">ถ่ายรูปสลิปเพื่อดึงยอดเงินอัตโนมัติ</p>
                   
-                  {scanStatus === 'scanning' ? (
-                     <div className="py-12 flex flex-col items-center justify-center">
-                        <div className="relative mb-6">
-                           <ScanLine className="text-amber-400 w-20 h-20 animate-pulse" />
-                           <div className="absolute top-0 left-0 w-full h-1 bg-amber-400 animate-[scan_1.5s_ease-in-out_infinite]"></div>
-                        </div>
-                        <h3 className="text-white font-black text-xl mb-2">กำลังตรวจสอบสลิป...</h3>
-                        <p className="text-amber-400/80 text-sm font-bold">รอสักครู่ ระบบกำลังอ่านยอดเงิน</p>
-                     </div>
-                  ) : (
-                     <>
-                        {scanStatus === 'error' ? (
-                           <div className="mb-6 bg-rose-500/10 border border-rose-500/30 p-4 rounded-2xl flex flex-col items-center text-rose-400">
-                             <AlertTriangle size={32} className="mb-2" />
-                             <h3 className="font-black text-lg mb-1">สแกนไม่ผ่าน</h3>
-                             <p className="text-xs font-medium leading-relaxed text-center">{scanMessage}<br/>กรุณาถ่ายรูปสลิปของจริงให้ชัดเจนใหม่ค่ะ</p>
-                           </div>
-                        ) : (
-                           <>
-                             <div className="bg-amber-500/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 border border-amber-500/20">
-                               <ScanLine className="text-amber-400 w-8 h-8" />
-                             </div>
-                             <h3 className="text-white font-black text-xl mb-2">{editSession ? 'แก้ไขรูปสลิป' : 'ขั้นตอนที่ 1 : สแกนสลิปโอนเงิน'}</h3>
-                             <p className="text-slate-400 text-xs font-bold mb-6 leading-relaxed">ถ่ายรูปสลิปเพื่อดึงยอดเงินอัตโนมัติ</p>
-                           </>
-                        )}
-                        
-                        <div className="grid grid-cols-2 gap-4">
-                           <label className="col-span-2 bg-gradient-to-b from-amber-400 to-orange-500 rounded-[2rem] p-6 flex flex-col items-center justify-center cursor-pointer active:scale-95 transition-transform shadow-lg border border-white/20">
-                              <Camera className="w-10 h-10 text-white mb-2" />
-                              <span className="text-white font-black text-lg tracking-wide">{scanStatus === 'error' ? '📸 ถ่ายสลิปใหม่' : 'เปิดกล้องถ่ายสลิป'}</span>
-                              <input type="file" className="hidden" accept="image/*" capture="environment" onChange={handleSlipUpload} />
-                           </label>
-                           
-                           <label className="col-span-2 bg-slate-800 rounded-2xl p-4 flex items-center justify-center gap-3 cursor-pointer active:scale-95 transition-colors border border-slate-700 hover:bg-slate-700">
-                              <ImageIcon className="w-5 h-5 text-blue-400" />
-                              <span className="text-slate-300 font-bold text-sm">เลือกจากอัลบั้ม</span>
-                              <input type="file" className="hidden" accept="image/*" onChange={handleSlipUpload} />
-                           </label>
-                        </div>
-                        
-                        {scanStatus === 'error' && (
-                           <div className="mt-8 text-center">
-                             <button onClick={handleEmergencyUnlock} className="text-[10px] text-slate-500 font-bold flex items-center justify-center gap-1 mx-auto hover:text-amber-400 transition-colors"><Lock size={10}/> ปลดล็อคระบบ (สำหรับผู้บริหาร)</button>
-                           </div>
-                        )}
+                  <div className="grid grid-cols-2 gap-4">
+                     <label className="col-span-2 bg-gradient-to-b from-amber-400 to-orange-500 rounded-[2rem] p-6 flex flex-col items-center justify-center cursor-pointer active:scale-95 transition-transform shadow-lg border border-white/20">
+                        <Camera className="w-10 h-10 text-white mb-2" />
+                        <span className="text-white font-black text-lg tracking-wide">เปิดกล้องถ่ายสลิป</span>
+                        <input type="file" className="hidden" accept="image/*" capture="environment" onChange={handleSlipUpload} />
+                     </label>
+                     <label className="col-span-2 bg-slate-800 rounded-2xl p-4 flex items-center justify-center gap-3 cursor-pointer active:scale-95 transition-colors border border-slate-700 hover:bg-slate-700">
+                        <ImageIcon className="w-5 h-5 text-blue-400" />
+                        <span className="text-slate-300 font-bold text-sm">เลือกจากอัลบั้ม</span>
+                        <input type="file" className="hidden" accept="image/*" onChange={handleSlipUpload} />
+                     </label>
+                  </div>
+                  {editSession && <button onClick={() => {setEditSession(null); setActiveTab('history');}} className="mt-6 text-slate-500 text-xs font-bold underline">ยกเลิกแก้ไข</button>}
+               </div>
+            )}
 
-                        {editSession && <button onClick={() => {setEditSession(null); setActiveTab('history');}} className="mt-6 text-slate-500 text-xs font-bold underline">ยกเลิกแก้ไข</button>}
-                     </>
-                  )}
+            {/* โชว์สถานะกำลังสแกน */}
+            {scanStatus === 'scanning' && (
+               <div className="bg-[#1e293b] p-6 rounded-3xl shadow-2xl border border-amber-500/30 text-center relative overflow-hidden py-12 flex flex-col items-center justify-center">
+                  <div className="relative mb-6">
+                     <ScanLine className="text-amber-400 w-20 h-20 animate-pulse" />
+                     <div className="absolute top-0 left-0 w-full h-1 bg-amber-400 animate-[scan_1.5s_ease-in-out_infinite]"></div>
+                  </div>
+                  <h3 className="text-white font-black text-xl mb-2">กำลังตรวจสอบสลิป...</h3>
+                  <p className="text-amber-400/80 text-sm font-bold">รอสักครู่ ระบบกำลังอ่านยอดเงิน</p>
                </div>
             )}
             
-            {scanStatus === 'success' && (
+            {/* โชว์ฟอร์มทันทีเมื่อมีรูปสลิปแล้ว (ไม่ว่าจะสแกนผ่าน หรือ Error ก็ตาม) */}
+            {(form.slipImage || scanStatus === 'error') && scanStatus !== 'scanning' && (
                <div className="space-y-4 animate-in fade-in zoom-in-95">
                  
-                 <div className="bg-[#1e293b] p-4 rounded-3xl shadow-lg border border-emerald-500/30 flex gap-4 items-center relative overflow-hidden">
+                 <div className={`p-4 rounded-3xl shadow-lg border flex gap-4 items-center relative overflow-hidden ${scanStatus === 'error' ? 'bg-rose-500/10 border-rose-500/30' : 'bg-[#1e293b] border-emerald-500/30'}`}>
                     <div className="w-20 h-24 bg-slate-900 rounded-xl overflow-hidden border border-slate-700 shrink-0" onClick={() => setPreviewImage(form.slipImage)}>
-                       <img src={form.slipImage} className="w-full h-full object-cover opacity-80" />
+                       {form.slipImage ? <img src={form.slipImage} className="w-full h-full object-cover opacity-80" /> : <div className="flex items-center justify-center h-full text-slate-500"><ImageIcon/></div>}
                     </div>
                     <div className="flex-1">
-                       <div className="flex items-center gap-1.5 text-emerald-400 mb-1"><CheckCircle size={14}/><span className="text-[10px] font-bold uppercase tracking-widest">{scanMessage === 'ปลดล็อคด้วยรหัสผู้บริหารแล้ว' ? 'ปลดล็อคยอดแล้ว' : 'ตรวจสอบแล้ว'}</span></div>
-                       <div className="text-2xl font-black text-white">{formatNum(form.transfer)} <span className="text-sm font-medium text-slate-400">฿</span></div>
-                       <button type="button" onClick={resetForm} className="mt-2 text-[10px] bg-slate-800 text-slate-300 px-3 py-1.5 rounded-lg font-bold border border-slate-600 flex items-center gap-1 w-max active:scale-95"><Camera size={12}/> เปลี่ยนสลิป</button>
+                       {scanStatus === 'error' ? (
+                          <>
+                             <div className="flex items-center gap-1.5 text-rose-400 mb-1"><AlertTriangle size={14}/><span className="text-[10px] font-bold uppercase tracking-widest">อ่านยอดไม่ได้</span></div>
+                             <p className="text-xs text-rose-300 font-medium mb-2 leading-tight">{scanMessage}</p>
+                          </>
+                       ) : (
+                          <>
+                             <div className="flex items-center gap-1.5 text-emerald-400 mb-1"><CheckCircle size={14}/><span className="text-[10px] font-bold uppercase tracking-widest">ดึงยอดสำเร็จ</span></div>
+                             <div className="text-2xl font-black text-white">{formatNum(form.transfer)} <span className="text-sm font-medium text-slate-400">฿</span></div>
+                          </>
+                       )}
+                       <button type="button" onClick={resetForm} className="mt-1 text-[10px] bg-slate-800 text-slate-300 px-3 py-1.5 rounded-lg font-bold border border-slate-600 flex items-center gap-1 w-max active:scale-95"><Camera size={12}/> เปลี่ยนรูปสลิป</button>
                     </div>
                  </div>
 
@@ -462,10 +438,9 @@ export default function App() {
 
                     <div className="grid grid-cols-2 gap-3 pt-2">
                        <div className="col-span-2 sm:col-span-1">
-                         <label className={`text-[10px] font-black block mb-1.5 uppercase tracking-wider flex items-center gap-1 ${scanMessage === 'ปลดล็อคด้วยรหัสผู้บริหารแล้ว' ? 'text-amber-400' : 'text-slate-400'}`}>
-                           {scanMessage === 'ปลดล็อคด้วยรหัสผู้บริหารแล้ว' ? <><Unlock size={10}/> ยอดเงินโอน (ปลดล็อค)</> : <><Lock size={10}/> ยอดเงิน (ล็อคการแก้ไข)</>}
-                         </label>
-                         <input type="number" step="any" value={form.transfer} onChange={e => setForm({...form, transfer: e.target.value})} readOnly={scanMessage !== 'ปลดล็อคด้วยรหัสผู้บริหารแล้ว'} className={`w-full p-3.5 rounded-xl text-xl font-black outline-none border transition-colors ${scanMessage !== 'ปลดล็อคด้วยรหัสผู้บริหารแล้ว' ? 'bg-slate-800 border-slate-700 text-slate-300 cursor-not-allowed opacity-80' : 'bg-amber-500/10 border-amber-500/30 text-amber-400 focus:border-amber-400'}`} placeholder="0.00" required />
+                         {/* ปลดล็อคยอดเงินให้แก้ได้เสมอ */}
+                         <label className="text-[10px] font-black text-amber-400 block mb-1.5 uppercase tracking-wider flex items-center gap-1"><Edit2 size={10}/> ยอดเงินโอน (แก้ได้)</label>
+                         <input type="number" step="any" value={form.transfer} onChange={e => setForm({...form, transfer: e.target.value})} className="w-full p-3.5 bg-amber-500/10 border border-amber-500/30 text-amber-400 rounded-xl text-xl font-black outline-none focus:border-amber-400 transition-colors" placeholder="0.00" required />
                        </div>
                        <div className="col-span-2 sm:col-span-1">
                          <label className={labelStyle}>เวลาบนสลิป</label>
@@ -502,12 +477,12 @@ export default function App() {
                        {editSession ? (
                           <div className="flex gap-3">
                              <button type="button" onClick={() => {setEditSession(null); resetForm(); setActiveTab('history');}} className="flex-1 p-4 bg-slate-800 text-white rounded-xl font-black text-sm active:scale-95 border border-slate-700">ยกเลิก</button>
-                             <button type="submit" disabled={loading} className="flex-1 p-4 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-xl font-black text-sm active:scale-95">{loading ? 'รอ...' : 'บันทึก'}</button>
+                             <button type="submit" disabled={loading || !form.slipImage} className="flex-1 p-4 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-xl font-black text-sm active:scale-95 disabled:opacity-50">{loading ? 'รอ...' : 'บันทึก'}</button>
                           </div>
                        ) : (
-                          <button type="submit" disabled={loading} className="w-full p-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-black shadow-lg hover:shadow-indigo-500/25 active:scale-95 text-sm flex items-center justify-center gap-2">
+                          <button type="submit" disabled={loading || !form.slipImage} className="w-full p-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-black shadow-lg hover:shadow-indigo-500/25 active:scale-95 text-sm flex items-center justify-center gap-2 disabled:opacity-50">
                             {loading ? <Loader2 className="animate-spin" size={18} /> : <CheckCircle size={18} />} 
-                            {loading ? 'กำลังบันทึก...' : 'บันทึกยอดโอน'}
+                            {loading ? 'กำลังบันทึก...' : 'บันทึกข้อมูลโอน'}
                           </button>
                        )}
                     </div>
